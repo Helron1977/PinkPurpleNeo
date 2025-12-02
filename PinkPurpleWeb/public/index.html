@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PinkPurple: Neon Drift</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&display=swap" rel="stylesheet">
+</head>
+
+<body>
+    <div id="lobby-container">
+        <h1 class="neon-title">PINK PURPLE ONLINE</h1>
+        <div class="lobby-controls">
+            <button id="create-btn" class="neon-btn">CREATE ROOM</button>
+            <div class="join-section">
+                <input type="text" id="room-code-input" placeholder="ENTER CODE" maxlength="5">
+                <button id="join-btn" class="neon-btn">JOIN</button>
+            </div>
+            <p id="lobby-status"></p>
+        </div>
+    </div>
+
+    <div id="game-container" style="display: none;">
+        <div id="ui-layer">
+            <div id="score-board">
+                <span id="p1-score" class="score p1">0</span>
+                <span class="divider">-</span>
+                <span id="p2-score" class="score p2">0</span>
+            </div>
+            <div id="message-container">
+                <p id="status-text">Waiting for players...</p>
+                <div id="room-display"
+                    style="color: #fff; font-family: 'Orbitron'; font-size: 1.5rem; margin-top: 10px;"></div>
+            </div>
+            <div id="controls-hint">
+                <div class="generic-controls">
+                    <span>CONTROLS</span>
+                    <div class="keys">
+                        <div class="key">←</div>
+                        <div class="key">↑</div>
+                        <div class="key">→</div>
+                        <div class="key">↓ (Hit)</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <canvas id="game-canvas"></canvas>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="game.js"></script>
+</body>
+
+</html>
