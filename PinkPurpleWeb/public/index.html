@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>PinkPurple: Neon Drift</title>
     <link rel="stylesheet" href="style.css">
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&display=swap" rel="stylesheet">
@@ -38,10 +38,25 @@
                 <div class="generic-controls">
                     <span>CONTROLS</span>
                     <div class="keys">
-                        <div class="key">←</div>
-                        <div class="key">↑</div>
-                        <div class="key">→</div>
-                        <div class="key">↓ (Hit)</div>
+                        <div class="key">← → ↑ (Move)</div>
+                        <div class="key">↓ (Slam)</div>
+                        <div class="key">SPACE (Attack)</div>
+                        <div class="key">SHIFT (Dash)</div>
+                        <div class="key">G (Grenade)</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Touch Controls Overlay -->
+            <div id="touch-controls" style="display: none;">
+                <div id="joystick-zone">
+                    <div id="joystick-knob"></div>
+                </div>
+                <div id="action-buttons">
+                    <button id="btn-grenade" class="touch-btn small-btn">💣</button>
+                    <div class="main-actions">
+                        <button id="btn-dash" class="touch-btn">⚡</button>
+                        <button id="btn-attack" class="touch-btn big-btn">⚔️</button>
                     </div>
                 </div>
             </div>

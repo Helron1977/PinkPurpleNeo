@@ -30,6 +30,45 @@ socket.on('error_msg', (msg) => {
     lobbyStatus.innerText = msg;
 });
 
+// Handle room creation
+socket.on('room_created', (roomId) => {
+    // Automatically join the room we just created
+    socket.emit('join_room', roomId);
+});
+
+// Handle joining a room
+socket.on('joined_room', (data) => {
+    // Switch to Game View
+    lobbyContainer.style.display = 'none';
+    gameContainer.style.display = 'block';
+
+    // Resume Audio Context on interaction (game start)
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+
+    // Start background music
+    soundManager.startBgMusic();
+
+    mySlot = data.role;
+
+    if (data.roomId) {
+        roomDisplay.innerText = `ROOM: ${data.roomId}`;
+    }
+
+    if (mySlot === 'spectator') {
+        statusText.innerText = 'Spectating...';
+    } else {
+        statusText.innerText = `You are ${mySlot === 'p1' ? 'Player 1 (Violet)' : 'Player 2 (Pink)'}`;
+    }
+
+    // Trigger resize to ensure canvas is correct
+    resize();
+});
+
+// Handle errors
+socket.on('error', (msg) => {
+    lobbyStatus.innerText = msg;
+});
+
 // Game State
 let players = {};
 let mySlot = null;
@@ -212,14 +251,18 @@ window.addEventListener('keydown', (e) => {
     if (e.code === 'ArrowLeft' || e.code === 'KeyA' || e.code === 'KeyQ') action = 'LEFT';
     if (e.code === 'ArrowRight' || e.code === 'KeyD') action = 'RIGHT';
     if (e.code === 'ArrowUp' || e.code === 'KeyW' || e.code === 'KeyZ') action = 'UP';
-    if (e.code === 'ArrowDown' || e.code === 'KeyS') action = 'HIT';
-    if (e.code === 'Space' || e.code === 'ShiftLeft') action = 'DASH';
+    if (e.code === 'ArrowDown' || e.code === 'KeyS') action = 'SLAM'; // Changed from HIT to SLAM
+    if (e.code === 'Space') action = 'HIT'; // Space is now attack
+    if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') action = 'DASH'; // Shift for dash
+    if (e.code === 'KeyG') action = 'GRENADE'; // G key for grenade
 
     if (action) {
         socket.emit('input', action);
         // Local feedback for immediate feel
         if (action === 'UP') soundManager.playJump();
         if (action === 'DASH') soundManager.playDash();
+        if (action === 'SLAM') soundManager.playNoise(0.2, 0.4); // Slam sound
+        if (action === 'GRENADE') soundManager.playTone(400, 'square', 0.1, 0.1); // Grenade throw sound
     }
 });
 
@@ -227,46 +270,92 @@ window.addEventListener('keyup', (e) => {
     keys[e.code] = false;
 });
 
-// Socket Events
-socket.on('init', (data) => {
-    // Switch to Game View
-    lobbyContainer.style.display = 'none';
-    gameContainer.style.display = 'block';
-
-    // Resume Audio Context on interaction (game start)
-    if (audioCtx.state === 'suspended') audioCtx.resume();
-
-    // Start background music
-    soundManager.startBgMusic();
-
-    mySlot = data.slot;
-    if (data.obstacles) {
-        metalBars = data.obstacles.map(o => ({
-            ...o,
-            angle: 0,
-            color: `rgba(${100 + Math.random() * 50}, ${100 + Math.random() * 50}, ${110 + Math.random() * 50}, 0.8)`
-        }));
-    }
-
-    if (data.roomId) {
-        roomDisplay.innerText = `ROOM: ${data.roomId}`;
-    }
-
-    if (mySlot === 'spectator') {
-        statusText.innerText = 'Spectating...';
-    } else {
-        statusText.innerText = `You are ${mySlot === 'p1' ? 'Player 1 (Violet)' : 'Player 2 (Pink)'}`;
-    }
-
-    // Trigger resize to ensure canvas is correct
-    resize();
-    draw(); // Start loop if not started
-});
+// Grenade and explosion state
+let grenades = [];
+let explosions = [];
 
 socket.on('state', (state) => {
     players = state.players;
     currentScores = state.scores;
+    grenades = state.grenades || [];
 });
+
+// Binary state protocol handler
+socket.on('state_bin', (buf) => {
+    const data = new Uint8Array(buf);
+    let offset = 0;
+
+    // 1. Scores
+    currentScores = {
+        p1: data[offset++],
+        p2: data[offset++]
+    };
+
+    // Helper to read player
+    const readPlayer = (playerId) => {
+        const flags = data[offset++];
+        const active = (flags & 1) !== 0;
+
+        if (!active) {
+            offset += 5; // Skip remaining bytes
+            return null;
+        }
+
+        const isHit = (flags & 2) !== 0;
+        const grenadeCount = (flags >> 2) & 0x03;
+        const damage = data[offset++];
+
+        // Read coordinates (Int16LE, scaled by 10)
+        const x = ((data[offset + 1] << 8) | data[offset]) / 10;
+        offset += 2;
+        const y = ((data[offset + 1] << 8) | data[offset]) / 10;
+        offset += 2;
+
+        // Convert to signed if needed
+        const xSigned = x > 32767 / 10 ? x - 65536 / 10 : x;
+        const ySigned = y > 32767 / 10 ? y - 65536 / 10 : y;
+
+        return {
+            x: xSigned,
+            y: ySigned,
+            damage: damage,
+            isHit: isHit,
+            grenadeCount: grenadeCount,
+            color: playerId === 'p1' ? '#9393D6' : '#CD62D5'
+        };
+    };
+
+    // 2. Players
+    players = {
+        p1: readPlayer('p1'),
+        p2: readPlayer('p2')
+    };
+
+    // Remove null players
+    if (!players.p1) delete players.p1;
+    if (!players.p2) delete players.p2;
+
+    // 3. Grenades
+    const grenadeCount = data[offset++];
+    grenades = [];
+    for (let i = 0; i < grenadeCount; i++) {
+        const gx = ((data[offset + 1] << 8) | data[offset]) / 10;
+        offset += 2;
+        const gy = ((data[offset + 1] << 8) | data[offset]) / 10;
+        offset += 2;
+        const age = data[offset++];
+
+        const gxSigned = gx > 32767 / 10 ? gx - 65536 / 10 : gx;
+        const gySigned = gy > 32767 / 10 ? gy - 65536 / 10 : gy;
+
+        grenades.push({
+            x: gxSigned,
+            y: gySigned,
+            age: age
+        });
+    }
+});
+
 
 socket.on('event', (event) => {
     if (event.type === 'hit') {
@@ -282,6 +371,21 @@ socket.on('event', (event) => {
     }
     if (event.type === 'bounce') {
         soundManager.playBounce();
+    }
+    if (event.type === 'grenade_explode') {
+        // Create explosion animation
+        explosions.push({
+            x: event.x,
+            y: event.y,
+            radius: event.radius,
+            age: 0
+        });
+        shakeIntensity = 40;
+        soundManager.playNoise(0.6, 0.5); // Big explosion
+        soundManager.playTone(60, 'sine', 0.4, 0.2); // Low boom
+    }
+    if (event.type === 'grenade_hit') {
+        soundManager.playHit();
     }
 });
 
@@ -476,19 +580,56 @@ function draw() {
         ctx.shadowBlur = 0;
     }
 
+    // Grenades
+    for (const g of grenades) {
+        ctx.save();
+        ctx.shadowBlur = 15;
+        ctx.shadowColor = '#ff0';
+        ctx.fillStyle = '#ff0';
+        ctx.beginPath();
+        ctx.arc(g.x, g.y, 8, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+        ctx.restore();
+    }
+
+    // Explosions
+    for (let i = explosions.length - 1; i >= 0; i--) {
+        const exp = explosions[i];
+        exp.age += 0.05;
+
+        ctx.save();
+        ctx.globalAlpha = 1 - exp.age;
+        ctx.shadowBlur = 30;
+        ctx.shadowColor = '#ff0';
+        ctx.strokeStyle = '#ff0';
+        ctx.lineWidth = 5;
+        ctx.beginPath();
+        ctx.arc(exp.x, exp.y, exp.radius * exp.age, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+
+        if (exp.age >= 1) {
+            explosions.splice(i, 1);
+        }
+    }
+
     // Particles
     for (let i = particles.length - 1; i >= 0; i--) {
         const p = particles[i];
         p.x += p.vx;
         p.y += p.vy;
-        p.life -= 0.05;
+        p.life -= 0.02;
+
+        if (p.life <= 0) {
+            particles.splice(i, 1);
+            continue;
+        }
+
         ctx.globalAlpha = p.life;
         ctx.fillStyle = p.color;
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
-        ctx.fill();
+        ctx.fillRect(p.x, p.y, 5, 5);
         ctx.globalAlpha = 1;
-        if (p.life <= 0) particles.splice(i, 1);
     }
 
     // --- UI OVERLAY (Rendered ON TOP) ---
@@ -499,7 +640,7 @@ function draw() {
     ctx.textBaseline = "middle";
 
     // Helper to draw damage circle
-    function drawDamageCircle(x, y, color, score, damage) {
+    function drawDamageCircle(x, y, color, score, damage, grenadeCount) {
         const radius = 80;
 
         // Background Circle
@@ -509,15 +650,13 @@ function draw() {
         ctx.fill();
 
         // Damage Fill (Red Sector)
-        // Max damage visual cap at 100% (full circle) or more? Let's say 100% = full circle red.
         const damagePercent = Math.min(damage, 100) / 100;
         if (damagePercent > 0) {
             ctx.beginPath();
             ctx.moveTo(x, y);
-            // Start from top (-PI/2) and go clockwise
             ctx.arc(x, y, radius, -Math.PI / 2, -Math.PI / 2 + (Math.PI * 2 * damagePercent));
             ctx.lineTo(x, y);
-            ctx.fillStyle = 'rgba(255, 0, 0, 0.6)'; // Red semi-transparent
+            ctx.fillStyle = 'rgba(255, 0, 0, 0.6)';
             ctx.fill();
         }
 
@@ -529,33 +668,227 @@ function draw() {
         ctx.shadowBlur = 30;
         ctx.shadowColor = color;
         ctx.stroke();
-        ctx.shadowBlur = 0; // Reset shadow for text
+        ctx.shadowBlur = 0;
 
         // Score Text
         ctx.fillStyle = color;
         ctx.fillText(score, x, y);
+
+        // Grenade Indicators
+        for (let i = 0; i < 3; i++) {
+            ctx.beginPath();
+            ctx.arc(x - 30 + i * 30, y + 100, 10, 0, Math.PI * 2);
+            if (i < grenadeCount) {
+                ctx.fillStyle = 'red';
+                ctx.shadowBlur = 10;
+                ctx.shadowColor = 'red';
+            } else {
+                ctx.fillStyle = '#333';
+                ctx.shadowBlur = 0;
+            }
+            ctx.fill();
+        }
+        ctx.shadowBlur = 0;
     }
 
-    // Find P1 and P2 damage from players object
-    // We need to map players to P1/P2 slots. 
-    // The 'players' object keys are socket IDs. We need to check 'isPlayer1' property.
+    // Get P1 and P2 stats
     let p1Damage = 0;
     let p2Damage = 0;
-    for (const id in players) {
-        if (players[id].isPlayer1) p1Damage = players[id].damage;
-        else p2Damage = players[id].damage;
+    let p1Grenades = 0;
+    let p2Grenades = 0;
+
+    if (players.p1) {
+        p1Damage = players.p1.damage || 0;
+        p1Grenades = players.p1.grenadeCount || 0;
+    }
+    if (players.p2) {
+        p2Damage = players.p2.damage || 0;
+        p2Grenades = players.p2.grenadeCount || 0;
     }
 
     // Left Circle (P1)
-    drawDamageCircle(250, 250, '#9393D6', currentScores.p1 || 0, p1Damage);
+    if (currentScores) {
+        drawDamageCircle(250, 250, '#9393D6', currentScores.p1 || 0, p1Damage, p1Grenades);
 
-    // Right Circle (P2)
-    drawDamageCircle(WIDTH - 250, 250, '#CD62D5', currentScores.p2 || 0, p2Damage);
+        // Right Circle (P2)
+        drawDamageCircle(WIDTH - 250, 250, '#CD62D5', currentScores.p2 || 0, p2Damage, p2Grenades);
+    }
 
     ctx.restore();
 
     animationId = requestAnimationFrame(draw);
 }
 
-// Global score state
+// Start animation loop
 let currentScores = { p1: 0, p2: 0 };
+draw();
+
+// --- TOUCH CONTROLS SETUP (Mobile) ---
+// Note: These elements need to be defined in the HTML for this to work
+// Check if touch control elements exist before setting them up
+if (document.getElementById('touch-controls')) {
+    const touchControls = document.getElementById('touch-controls');
+    const joystickZone = document.getElementById('joystick-zone');
+    const joystickKnob = document.getElementById('joystick-knob');
+    const btnAttack = document.getElementById('btn-attack');
+    const btnDash = document.getElementById('btn-dash');
+    const btnGrenade = document.getElementById('btn-grenade');
+
+    // Check if device supports touch
+    if ('ontouchstart' in window || navigator.maxTouchPoints > 0) {
+        // It's likely a mobile device or tablet
+        touchControls.style.display = 'flex';
+        const controlsHint = document.getElementById('controls-hint');
+        if (controlsHint) {
+            controlsHint.style.display = 'none'; // Hide keyboard hints
+        }
+    }
+
+    // Joystick Variables
+    let joystickActive = false;
+    let joystickCenter = { x: 0, y: 0 };
+    let joystickTouchId = null;
+    let lastJoystickAction = null; // Track last action to prevent spam
+
+    // Joystick Events
+    joystickZone.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        const touch = e.changedTouches[0];
+        joystickTouchId = touch.identifier;
+        joystickActive = true;
+        lastJoystickAction = null; // Reset action on new touch
+
+        const rect = joystickZone.getBoundingClientRect();
+        joystickCenter = {
+            x: rect.left + rect.width / 2,
+            y: rect.top + rect.height / 2
+        };
+
+        updateJoystick(touch);
+    }, { passive: false });
+
+    joystickZone.addEventListener('touchmove', (e) => {
+        e.preventDefault();
+        if (!joystickActive) return;
+
+        for (let i = 0; i < e.changedTouches.length; i++) {
+            if (e.changedTouches[i].identifier === joystickTouchId) {
+                updateJoystick(e.changedTouches[i]);
+                break;
+            }
+        }
+    }, { passive: false });
+
+    joystickZone.addEventListener('touchend', (e) => {
+        e.preventDefault();
+        for (let i = 0; i < e.changedTouches.length; i++) {
+            if (e.changedTouches[i].identifier === joystickTouchId) {
+                resetJoystick();
+                break;
+            }
+        }
+    }, { passive: false });
+
+    function updateJoystick(touch) {
+        const maxDist = 40; // Max movement radius
+        const dx = touch.clientX - joystickCenter.x;
+        const dy = touch.clientY - joystickCenter.y;
+        const dist = Math.min(Math.sqrt(dx * dx + dy * dy), maxDist);
+        const angle = Math.atan2(dy, dx); // -PI to PI
+
+        const moveX = Math.cos(angle) * dist;
+        const moveY = Math.sin(angle) * dist;
+
+        joystickKnob.style.transform = `translate(calc(-50% + ${moveX}px), calc(-50% + ${moveY}px))`;
+
+        // Determine Direction based on Angle (4 Zones)
+        let currentAction = null;
+
+        if (dist > 10) { // Deadzone
+            if (angle > -Math.PI / 4 && angle < Math.PI / 4) {
+                currentAction = 'RIGHT';
+            } else if (angle >= Math.PI / 4 && angle < 3 * Math.PI / 4) {
+                currentAction = 'SLAM';
+            } else if (angle >= -3 * Math.PI / 4 && angle < -Math.PI / 4) {
+                currentAction = 'UP';
+            } else {
+                currentAction = 'LEFT'; // Remaining sector
+            }
+        }
+
+        // Only send if action changed (prevent spam)
+        if (currentAction !== lastJoystickAction) {
+            if (currentAction) {
+                sendTouchAction(currentAction);
+            }
+            lastJoystickAction = currentAction;
+        }
+    }
+
+    function resetJoystick() {
+        joystickActive = false;
+        joystickTouchId = null;
+        lastJoystickAction = null;
+        joystickKnob.style.transform = 'translate(-50%, -50%)';
+    }
+
+    // Button Events
+    function setupButton(btn, action) {
+        btn.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            sendTouchAction(action);
+            btn.style.transform = 'scale(0.9)';
+        }, { passive: false });
+
+        btn.addEventListener('touchend', (e) => {
+            e.preventDefault();
+            btn.style.transform = 'scale(1)';
+        }, { passive: false });
+    }
+
+    setupButton(btnAttack, 'HIT');
+    setupButton(btnDash, 'DASH');
+    setupButton(btnGrenade, 'GRENADE');
+
+    // Helper to send action via socket
+    function sendTouchAction(action) {
+        socket.emit('input', action);
+        // Local feedback
+        if (action === 'UP') soundManager.playJump();
+        if (action === 'DASH') soundManager.playDash();
+        if (action === 'SLAM') soundManager.playNoise(0.2, 0.4);
+        if (action === 'GRENADE') soundManager.playTone(400, 'square', 0.1, 0.1);
+    }
+}
+
+// --- AUTO HIDE CONTROLS HINT (PC) ---
+const controlsHint = document.getElementById('controls-hint');
+if (controlsHint) {
+    let hintTimeout;
+
+    function showControlsHint() {
+        const touchControls = document.getElementById('touch-controls');
+        if (touchControls && touchControls.style.display === 'flex') return; // Don't show on mobile
+
+        controlsHint.style.opacity = '1';
+        clearTimeout(hintTimeout);
+        hintTimeout = setTimeout(() => {
+            controlsHint.style.opacity = '0';
+        }, 5000); // Hide after 5 seconds
+    }
+
+    // Show hint on game init
+    socket.on('init', () => {
+        showControlsHint();
+    });
+
+    // Hook into death event for respawn hint
+    socket.on('event', (event) => {
+        if (event.type === 'death') {
+            showControlsHint();
+        }
+    });
+
+    // Initial show
+    showControlsHint();
+}
