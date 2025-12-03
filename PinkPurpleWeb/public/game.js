@@ -733,6 +733,7 @@ if (document.getElementById('touch-controls')) {
     const btnAttack = document.getElementById('btn-attack');
     const btnDash = document.getElementById('btn-dash');
     const btnGrenade = document.getElementById('btn-grenade');
+    const btnSlam = document.getElementById('btn-slam');
 
     // Check if device supports touch
     if ('ontouchstart' in window || navigator.maxTouchPoints > 0) {
@@ -790,29 +791,57 @@ if (document.getElementById('touch-controls')) {
     }, { passive: false });
 
     function updateJoystick(touch) {
-        const maxDist = 40; // Max movement radius
+        const maxDist = 50; // Max movement radius
         const dx = touch.clientX - joystickCenter.x;
         const dy = touch.clientY - joystickCenter.y;
-        const dist = Math.min(Math.sqrt(dx * dx + dy * dy), maxDist);
-        const angle = Math.atan2(dy, dx); // -PI to PI
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        
+        // Constrain movement to max distance
+        const constrainedDist = Math.min(dist, maxDist);
+        const moveX = (dx / dist) * constrainedDist;
+        const moveY = (dy / dist) * constrainedDist;
 
-        const moveX = Math.cos(angle) * dist;
-        const moveY = Math.sin(angle) * dist;
-
+        // Update knob position
         joystickKnob.style.transform = `translate(calc(-50% + ${moveX}px), calc(-50% + ${moveY}px))`;
 
-        // Determine Direction based on Angle (4 Zones)
+        // Determine Direction based on 3 distinct segments (LEFT, UP, RIGHT)
+        // Use coordinate-based detection for better precision and reactivity
         let currentAction = null;
 
-        if (dist > 10) { // Deadzone
-            if (angle > -Math.PI / 4 && angle < Math.PI / 4) {
-                currentAction = 'RIGHT';
-            } else if (angle >= Math.PI / 4 && angle < 3 * Math.PI / 4) {
-                currentAction = 'SLAM';
-            } else if (angle >= -3 * Math.PI / 4 && angle < -Math.PI / 4) {
+        if (dist > 15) { // Deadzone
+            const absX = Math.abs(dx);
+            const absY = Math.abs(dy);
+            
+            // Define segment boundaries - prioritize horizontal for LEFT/RIGHT
+            const horizontalThreshold = 20; // Minimum X movement for LEFT/RIGHT
+            const verticalThreshold = 25; // Minimum Y movement for UP
+            
+            // Priority 1: Strong horizontal movement (LEFT or RIGHT)
+            // This ensures RIGHT works perfectly even when perfectly horizontal
+            if (absX > horizontalThreshold) {
+                if (dx > 0) {
+                    currentAction = 'RIGHT';
+                } else {
+                    currentAction = 'LEFT';
+                }
+            }
+            // Priority 2: Strong vertical movement UP (only if not too horizontal)
+            else if (dy < -verticalThreshold && absX < horizontalThreshold) {
                 currentAction = 'UP';
-            } else {
-                currentAction = 'LEFT'; // Remaining sector
+            }
+            // Priority 3: Weak movement - use angle-based detection
+            else {
+                const angle = Math.atan2(dy, dx);
+                // RIGHT: -60° to 60° (wide range for better detection)
+                // UP: -120° to -60°
+                // LEFT: rest (120° to -120°)
+                if (angle > -Math.PI / 3 && angle < Math.PI / 3) {
+                    currentAction = 'RIGHT';
+                } else if (angle > -2 * Math.PI / 3 && angle < -Math.PI / 3) {
+                    currentAction = 'UP';
+                } else {
+                    currentAction = 'LEFT';
+                }
             }
         }
 
@@ -849,6 +878,7 @@ if (document.getElementById('touch-controls')) {
     setupButton(btnAttack, 'HIT');
     setupButton(btnDash, 'DASH');
     setupButton(btnGrenade, 'GRENADE');
+    setupButton(btnSlam, 'SLAM');
 
     // Helper to send action via socket
     function sendTouchAction(action) {

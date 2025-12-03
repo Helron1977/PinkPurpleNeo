@@ -49,14 +49,21 @@
 
             <!-- Touch Controls Overlay -->
             <div id="touch-controls" style="display: none;">
-                <div id="joystick-zone">
-                    <div id="joystick-knob"></div>
+                <div class="left-controls">
+                    <div id="joystick-zone">
+                        <div id="joystick-knob"></div>
+                        <!-- Visual segments for better UX -->
+                        <div class="joystick-segment segment-left"></div>
+                        <div class="joystick-segment segment-up"></div>
+                        <div class="joystick-segment segment-right"></div>
+                    </div>
                 </div>
                 <div id="action-buttons">
                     <button id="btn-grenade" class="touch-btn small-btn">💣</button>
                     <div class="main-actions">
                         <button id="btn-dash" class="touch-btn">⚡</button>
                         <button id="btn-attack" class="touch-btn big-btn">⚔️</button>
+                        <button id="btn-slam" class="touch-btn slam-btn">⬇️</button>
                     </div>
                 </div>
             </div>
