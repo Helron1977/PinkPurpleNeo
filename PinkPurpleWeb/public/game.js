@@ -76,6 +76,160 @@ const WIDTH = 1920;
 const HEIGHT = 1080;
 let scale = 1;
 
+// Optimized blur caching - pre-render static elements with blur
+const blurCache = {
+    floorLine: null,
+    backgroundGlow: null,
+    obstacles: new Map(), // Cache obstacles by their properties
+    initialized: false
+};
+
+function initBlurCache() {
+    if (blurCache.initialized) return;
+
+    // Pre-render floor line with blur
+    const floorCanvas = document.createElement('canvas');
+    floorCanvas.width = WIDTH;
+    floorCanvas.height = 50;
+    const floorCtx = floorCanvas.getContext('2d');
+    floorCtx.strokeStyle = '#0ff';
+    floorCtx.lineWidth = 3;
+    floorCtx.shadowBlur = 10;
+    floorCtx.shadowColor = '#0ff';
+    floorCtx.beginPath();
+    floorCtx.moveTo(0, 10);
+    floorCtx.lineTo(WIDTH, 10);
+    floorCtx.stroke();
+    blurCache.floorLine = floorCanvas;
+
+    // Pre-render background glow
+    const bgCanvas = document.createElement('canvas');
+    bgCanvas.width = WIDTH;
+    bgCanvas.height = HEIGHT;
+    const bgCtx = bgCanvas.getContext('2d');
+    bgCtx.shadowBlur = 20;
+    bgCtx.shadowColor = 'cyan';
+    bgCtx.fillStyle = 'rgba(0, 255, 255, 0.1)';
+    bgCtx.fillRect(0, 0, WIDTH, 100);
+    bgCtx.fillRect(0, HEIGHT - 100, WIDTH, 100);
+    blurCache.backgroundGlow = bgCanvas;
+
+    blurCache.initialized = true;
+}
+
+// === VISUAL FEEDBACK SYSTEM ===
+let floatingMessages = [];
+let playerCooldowns = {
+    p1: { dash: 0, grenades: 3 },
+    p2: { dash: 0, grenades: 3 }
+};
+
+// Add floating damage text
+function addFloatingDamage(x, y, damage, color) {
+    floatingMessages.push({
+        x, y,
+        text: `+${damage}`,
+        color,
+        life: 1.0,
+        vy: -2,
+        vx: (Math.random() - 0.5) * 1
+    });
+}
+
+// Add floating action text
+function addFloatingText(x, y, text, color = '#fff') {
+    floatingMessages.push({
+        x, y,
+        text,
+        color,
+        life: 1.0,
+        vy: -1.5,
+        vx: 0
+    });
+}
+
+// Update and draw floating messages
+function updateFloatingMessages() {
+    for (let i = floatingMessages.length - 1; i >= 0; i--) {
+        const msg = floatingMessages[i];
+        msg.y += msg.vy;
+        msg.x += msg.vx;
+        msg.life -= 0.02;
+
+        if (msg.life <= 0) {
+            floatingMessages.splice(i, 1);
+            continue;
+        }
+
+        ctx.save();
+        ctx.globalAlpha = msg.life;
+        ctx.font = 'bold 40px Orbitron';
+        ctx.textAlign = 'center';
+        ctx.fillStyle = msg.color;
+        ctx.strokeStyle = '#000';
+        ctx.lineWidth = 3;
+        ctx.strokeText(msg.text, msg.x, msg.y);
+        ctx.fillText(msg.text, msg.x, msg.y);
+        ctx.restore();
+    }
+}
+
+// Draw cooldown circle indicator
+function drawCooldownCircle(x, y, percent, color, label) {
+    const radius = 25;
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(x, y, radius, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+    ctx.fill();
+
+    if (percent < 1) {
+        ctx.beginPath();
+        ctx.arc(x, y, radius, -Math.PI / 2, -Math.PI / 2 + (Math.PI * 2 * percent));
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 4;
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.arc(x, y, radius - 2, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+        ctx.fill();
+    } else {
+        ctx.beginPath();
+        ctx.arc(x, y, radius, 0, Math.PI * 2);
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 3;
+        ctx.shadowBlur = 10;
+        ctx.shadowColor = color;
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+    }
+
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 12px Orbitron';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(label, x, y);
+    ctx.restore();
+}
+
+// Draw player cooldowns
+function drawPlayerCooldowns(x, y, playerId) {
+    const cooldown = playerCooldowns[playerId];
+    if (!cooldown) return;
+
+    const dashPercent = 1 - (cooldown.dash / 60);
+    drawCooldownCircle(x - 35, y, dashPercent, '#00ffaa', '⚡');
+
+    for (let i = 0; i < 3; i++) {
+        const gx = x + 35 + (i * 30);
+        const available = i < cooldown.grenades;
+        drawCooldownCircle(gx, y, available ? 1 : 0, available ? '#ffaa00' : '#333', '💣');
+    }
+}
+
+
 // Background Image
 const bgImage = new Image();
 bgImage.src = 'decor.png';
@@ -357,23 +511,32 @@ socket.on('state_bin', (buf) => {
 });
 
 
+
 socket.on('event', (event) => {
     if (event.type === 'hit') {
-        createExplosion(players[event.to].x, players[event.to].y, players[event.from].color);
+        const target = players[event.to];
+        if (target) {
+            createExplosion(target.x, target.y, players[event.from].color);
+            // Add floating damage text
+            addFloatingDamage(target.x, target.y, event.damage || 10, '#ff0000');
+        }
         document.body.classList.add('flash');
         setTimeout(() => document.body.classList.remove('flash'), 100);
         soundManager.playHit();
     }
     if (event.type === 'death') {
-        // Screen shake?
         shakeIntensity = 30;
-        soundManager.playNoise(0.5, 0.4); // Explosion sound
+        soundManager.playNoise(0.5, 0.4);
+        // Add death message
+        const deadPlayer = event.player === 'p1' ? players.p1 : players.p2;
+        if (deadPlayer) {
+            addFloatingText(deadPlayer.x, deadPlayer.y, 'K.O.!', '#ff0000');
+        }
     }
     if (event.type === 'bounce') {
         soundManager.playBounce();
     }
     if (event.type === 'grenade_explode') {
-        // Create explosion animation
         explosions.push({
             x: event.x,
             y: event.y,
@@ -381,11 +544,15 @@ socket.on('event', (event) => {
             age: 0
         });
         shakeIntensity = 40;
-        soundManager.playNoise(0.6, 0.5); // Big explosion
-        soundManager.playTone(60, 'sine', 0.4, 0.2); // Low boom
+        soundManager.playNoise(0.6, 0.5);
+        soundManager.playTone(60, 'sine', 0.4, 0.2);
+        addFloatingText(event.x, event.y, 'BOOM!', '#ffff00');
     }
     if (event.type === 'grenade_hit') {
         soundManager.playHit();
+        if (event.target && players[event.target]) {
+            addFloatingDamage(players[event.target].x, players[event.target].y, event.damage || 10, '#ff8800');
+        }
     }
 });
 
@@ -491,15 +658,13 @@ function draw() {
         ctx.lineTo(WIDTH, y - timeOffset);
         ctx.stroke();
     }
-    ctx.shadowBlur = 20;
-    ctx.shadowColor = 'cyan';
-    ctx.fillStyle = 'rgba(0, 255, 255, 0.1)';
-    ctx.fillRect(0, HEIGHT - 100, WIDTH, 100);
-    ctx.fillRect(0, 0, WIDTH, 100);
-    ctx.shadowBlur = 0;
+    // Use pre-rendered background glow (no blur calculation needed)
+    if (!blurCache.initialized) initBlurCache();
+    ctx.drawImage(blurCache.backgroundGlow, 0, 0);
     ctx.restore();
 
     // --- OBSTACLES (Rendered BEHIND UI) ---
+    // Optimize: render obstacles without blur, or use cached versions
     ctx.save();
     for (const bar of metalBars) {
         ctx.translate(bar.x, bar.y);
@@ -507,7 +672,8 @@ function draw() {
         ctx.fillStyle = 'rgba(20, 20, 30, 0.9)';
         ctx.strokeStyle = bar.color;
         ctx.lineWidth = 4;
-        ctx.shadowBlur = 15;
+        // Reduced blur for better performance - or remove entirely for static obstacles
+        ctx.shadowBlur = 8; // Reduced from 15
         ctx.shadowColor = bar.color;
         ctx.fillRect(0, 0, bar.w, bar.h);
         ctx.strokeRect(0, 0, bar.w, bar.h);
@@ -518,22 +684,16 @@ function draw() {
         ctx.lineTo(10, bar.h - 10);
         ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
         ctx.lineWidth = 2;
+        ctx.shadowBlur = 0; // No blur for inner lines
         ctx.stroke();
         ctx.rotate(-bar.angle);
         ctx.translate(-bar.x, -bar.y);
     }
     ctx.restore();
 
-    // Floor Line
-    ctx.strokeStyle = '#0ff';
-    ctx.lineWidth = 3;
-    ctx.shadowBlur = 10;
-    ctx.shadowColor = '#0ff';
-    ctx.beginPath();
-    ctx.moveTo(0, HEIGHT - 40);
-    ctx.lineTo(WIDTH, HEIGHT - 40);
-    ctx.stroke();
-    ctx.shadowBlur = 0;
+    // Floor Line - use pre-rendered version
+    if (!blurCache.initialized) initBlurCache();
+    ctx.drawImage(blurCache.floorLine, 0, HEIGHT - 40);
 
     // Players
     for (const id in players) {
@@ -558,13 +718,15 @@ function draw() {
         ctx.lineCap = 'round';
         ctx.lineJoin = 'round';
         ctx.globalAlpha = 0.4; // Semi-transparent trail
-        ctx.shadowBlur = 10;
+        // Reduced blur for trails - less expensive
+        ctx.shadowBlur = 6; // Reduced from 10
         ctx.shadowColor = p.color;
         ctx.stroke();
         ctx.restore();
 
         // Draw Player
-        ctx.shadowBlur = 20;
+        // Keep blur for players (important visual effect) but optimize
+        ctx.shadowBlur = 15; // Reduced from 20
         ctx.shadowColor = p.color;
         ctx.beginPath();
         ctx.fillStyle = p.color;
@@ -580,10 +742,10 @@ function draw() {
         ctx.shadowBlur = 0;
     }
 
-    // Grenades
+    // Grenades - reduced blur for better performance
     for (const g of grenades) {
         ctx.save();
-        ctx.shadowBlur = 15;
+        ctx.shadowBlur = 10; // Reduced from 15
         ctx.shadowColor = '#ff0';
         ctx.fillStyle = '#ff0';
         ctx.beginPath();
@@ -600,7 +762,7 @@ function draw() {
 
         ctx.save();
         ctx.globalAlpha = 1 - exp.age;
-        ctx.shadowBlur = 30;
+        ctx.shadowBlur = 20; // Reduced from 30
         ctx.shadowColor = '#ff0';
         ctx.strokeStyle = '#ff0';
         ctx.lineWidth = 5;
@@ -660,12 +822,12 @@ function draw() {
             ctx.fill();
         }
 
-        // Border Ring
+        // Border Ring - reduced blur for UI elements
         ctx.beginPath();
         ctx.arc(x, y, radius, 0, Math.PI * 2);
         ctx.strokeStyle = color;
         ctx.lineWidth = 5;
-        ctx.shadowBlur = 30;
+        ctx.shadowBlur = 20; // Reduced from 30
         ctx.shadowColor = color;
         ctx.stroke();
         ctx.shadowBlur = 0;
@@ -680,7 +842,7 @@ function draw() {
             ctx.arc(x - 30 + i * 30, y + 100, 10, 0, Math.PI * 2);
             if (i < grenadeCount) {
                 ctx.fillStyle = 'red';
-                ctx.shadowBlur = 10;
+                ctx.shadowBlur = 6; // Reduced from 10
                 ctx.shadowColor = 'red';
             } else {
                 ctx.fillStyle = '#333';
@@ -721,6 +883,7 @@ function draw() {
 
 // Start animation loop
 let currentScores = { p1: 0, p2: 0 };
+initBlurCache(); // Initialize blur cache before first draw
 draw();
 
 // --- TOUCH CONTROLS SETUP (Mobile) ---
@@ -795,7 +958,7 @@ if (document.getElementById('touch-controls')) {
         const dx = touch.clientX - joystickCenter.x;
         const dy = touch.clientY - joystickCenter.y;
         const dist = Math.sqrt(dx * dx + dy * dy);
-        
+
         // Constrain movement to max distance
         const constrainedDist = Math.min(dist, maxDist);
         const moveX = (dx / dist) * constrainedDist;
@@ -811,11 +974,11 @@ if (document.getElementById('touch-controls')) {
         if (dist > 15) { // Deadzone
             const absX = Math.abs(dx);
             const absY = Math.abs(dy);
-            
+
             // Define segment boundaries - prioritize horizontal for LEFT/RIGHT
             const horizontalThreshold = 20; // Minimum X movement for LEFT/RIGHT
             const verticalThreshold = 25; // Minimum Y movement for UP
-            
+
             // Priority 1: Strong horizontal movement (LEFT or RIGHT)
             // This ensures RIGHT works perfectly even when perfectly horizontal
             if (absX > horizontalThreshold) {

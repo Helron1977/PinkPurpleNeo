@@ -1,0 +1,387 @@
+/* Welcome Screen Styles */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Orbitron', sans-serif;
+    overflow: hidden;
+    background: #000;
+}
+
+#welcome-screen {
+    position: relative;
+    width: 100vw;
+    height: 100vh;
+    background: radial-gradient(ellipse at bottom, #1B2735 0%, #090A0F 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+}
+
+/* Animated Starfield */
+.stars,
+.stars2,
+.stars3 {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+}
+
+.stars {
+    background: transparent url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="2" height="2"><circle cx="1" cy="1" r="1" fill="white"/></svg>') repeat;
+    animation: stars-move 50s linear infinite;
+}
+
+.stars2 {
+    background: transparent url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="3" height="3"><circle cx="1.5" cy="1.5" r="1" fill="rgba(255,255,255,0.5)"/></svg>') repeat;
+    animation: stars-move 100s linear infinite;
+}
+
+.stars3 {
+    background: transparent url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"><circle cx="2" cy="2" r="1.5" fill="rgba(255,255,255,0.3)"/></svg>') repeat;
+    animation: stars-move 150s linear infinite;
+}
+
+@keyframes stars-move {
+    from {
+        transform: translateY(0);
+    }
+
+    to {
+        transform: translateY(-2000px);
+    }
+}
+
+/* Content Container */
+.welcome-content {
+    position: relative;
+    z-index: 10;
+    text-align: center;
+    animation: fade-in 1s ease-out;
+}
+
+@keyframes fade-in {
+    from {
+        opacity: 0;
+        transform: translateY(30px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Game Title */
+.game-title {
+    font-size: 8rem;
+    font-weight: 900;
+    margin-bottom: 20px;
+    letter-spacing: 10px;
+    line-height: 1;
+}
+
+.pink {
+    color: #CD62D5;
+    text-shadow:
+        0 0 10px #CD62D5,
+        0 0 20px #CD62D5,
+        0 0 40px #CD62D5,
+        0 0 80px #CD62D5;
+    animation: glow-pink 2s ease-in-out infinite alternate;
+}
+
+.purple {
+    color: #9393D6;
+    text-shadow:
+        0 0 10px #9393D6,
+        0 0 20px #9393D6,
+        0 0 40px #9393D6,
+        0 0 80px #9393D6;
+    animation: glow-purple 2s ease-in-out infinite alternate;
+}
+
+@keyframes glow-pink {
+    from {
+        text-shadow:
+            0 0 10px #CD62D5,
+            0 0 20px #CD62D5,
+            0 0 40px #CD62D5;
+    }
+
+    to {
+        text-shadow:
+            0 0 20px #CD62D5,
+            0 0 30px #CD62D5,
+            0 0 60px #CD62D5,
+            0 0 100px #CD62D5;
+    }
+}
+
+@keyframes glow-purple {
+    from {
+        text-shadow:
+            0 0 10px #9393D6,
+            0 0 20px #9393D6,
+            0 0 40px #9393D6;
+    }
+
+    to {
+        text-shadow:
+            0 0 20px #9393D6,
+            0 0 30px #9393D6,
+            0 0 60px #9393D6,
+            0 0 100px #9393D6;
+    }
+}
+
+.subtitle {
+    font-size: 1.5rem;
+    color: #0ff;
+    text-shadow: 0 0 10px #0ff;
+    letter-spacing: 8px;
+    margin-bottom: 60px;
+    animation: pulse-cyan 3s ease-in-out infinite;
+}
+
+@keyframes pulse-cyan {
+
+    0%,
+    100% {
+        opacity: 0.7;
+    }
+
+    50% {
+        opacity: 1;
+    }
+}
+
+/* Player Input */
+.player-input-container {
+    position: relative;
+    margin: 0 auto 40px;
+    width: 500px;
+}
+
+#player-name-input {
+    width: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    border: 2px solid #0ff;
+    color: #0ff;
+    padding: 20px 30px;
+    font-size: 1.8rem;
+    font-family: 'Orbitron', sans-serif;
+    text-align: center;
+    text-transform: uppercase;
+    letter-spacing: 4px;
+    border-radius: 10px;
+    outline: none;
+    transition: all 0.3s;
+    box-shadow:
+        0 0 20px rgba(0, 255, 255, 0.3),
+        inset 0 0 20px rgba(0, 255, 255, 0.1);
+}
+
+#player-name-input:focus {
+    border-color: #CD62D5;
+    color: #CD62D5;
+    box-shadow:
+        0 0 30px rgba(205, 98, 213, 0.6),
+        inset 0 0 20px rgba(205, 98, 213, 0.2);
+    transform: scale(1.02);
+}
+
+#player-name-input::placeholder {
+    color: rgba(0, 255, 255, 0.4);
+}
+
+.input-glow {
+    position: absolute;
+    top: -2px;
+    left: -2px;
+    right: -2px;
+    bottom: -2px;
+    background: linear-gradient(45deg, #CD62D5, #9393D6, #0ff);
+    border-radius: 10px;
+    opacity: 0;
+    z-index: -1;
+    filter: blur(20px);
+    transition: opacity 0.3s;
+}
+
+#player-name-input:focus+.input-glow {
+    opacity: 0.6;
+    animation: rotate-glow 3s linear infinite;
+}
+
+@keyframes rotate-glow {
+    0% {
+        filter: blur(20px) hue-rotate(0deg);
+    }
+
+    100% {
+        filter: blur(20px) hue-rotate(360deg);
+    }
+}
+
+/* Start Button */
+.start-button {
+    position: relative;
+    background: transparent;
+    border: 3px solid #0ff;
+    color: #0ff;
+    padding: 20px 60px;
+    font-size: 1.5rem;
+    font-family: 'Orbitron', sans-serif;
+    font-weight: bold;
+    letter-spacing: 4px;
+    cursor: pointer;
+    border-radius: 50px;
+    overflow: hidden;
+    transition: all 0.3s;
+    box-shadow:
+        0 0 20px rgba(0, 255, 255, 0.5),
+        inset 0 0 20px rgba(0, 255, 255, 0.1);
+    animation: pulse-button 2s ease-in-out infinite;
+}
+
+@keyframes pulse-button {
+
+    0%,
+    100% {
+        transform: scale(1);
+        box-shadow:
+            0 0 20px rgba(0, 255, 255, 0.5),
+            inset 0 0 20px rgba(0, 255, 255, 0.1);
+    }
+
+    50% {
+        transform: scale(1.05);
+        box-shadow:
+            0 0 40px rgba(0, 255, 255, 0.8),
+            inset 0 0 30px rgba(0, 255, 255, 0.2);
+    }
+}
+
+.start-button:hover {
+    background: #0ff;
+    color: #000;
+    transform: scale(1.1);
+    box-shadow:
+        0 0 50px rgba(0, 255, 255, 1),
+        inset 0 0 30px rgba(0, 255, 255, 0.5);
+}
+
+.start-button:active {
+    transform: scale(0.95);
+}
+
+.btn-text {
+    position: relative;
+    z-index: 2;
+}
+
+.btn-glow {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 0;
+    height: 0;
+    background: rgba(0, 255, 255, 0.5);
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    transition: width 0.6s, height 0.6s;
+}
+
+.start-button:hover .btn-glow {
+    width: 300px;
+    height: 300px;
+}
+
+/* Controls Preview */
+.controls-preview {
+    margin-top: 80px;
+    display: flex;
+    justify-content: center;
+    gap: 40px;
+    flex-wrap: wrap;
+}
+
+.control-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+}
+
+.key {
+    background: rgba(0, 0, 0, 0.5);
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    padding: 10px 20px;
+    border-radius: 8px;
+    font-size: 1.2rem;
+    color: #fff;
+    min-width: 80px;
+    text-align: center;
+    box-shadow: 0 0 10px rgba(255, 255, 255, 0.2);
+}
+
+.action {
+    font-size: 0.9rem;
+    color: #0ff;
+    text-shadow: 0 0 5px #0ff;
+}
+
+/* Version */
+.version {
+    position: absolute;
+    bottom: 20px;
+    right: 20px;
+    color: rgba(255, 255, 255, 0.3);
+    font-size: 0.9rem;
+}
+
+/* Mobile Responsive */
+@media (max-width: 768px) {
+    .game-title {
+        font-size: 4rem;
+        letter-spacing: 5px;
+    }
+
+    .subtitle {
+        font-size: 1rem;
+        letter-spacing: 4px;
+    }
+
+    .player-input-container {
+        width: 90%;
+    }
+
+    #player-name-input {
+        font-size: 1.3rem;
+        padding: 15px 20px;
+    }
+
+    .start-button {
+        font-size: 1.2rem;
+        padding: 15px 40px;
+    }
+
+    .controls-preview {
+        gap: 20px;
+        margin-top: 40px;
+    }
+
+    .key {
+        font-size: 1rem;
+        padding: 8px 15px;
+        min-width: 60px;
+    }
+}

@@ -6,22 +6,71 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>PinkPurple: Neon Drift</title>
     <link rel="stylesheet" href="style.css">
-    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="welcome.css">
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
 </head>
 
 <body>
-    <div id="lobby-container">
-        <h1 class="neon-title">PINK PURPLE ONLINE</h1>
-        <div class="lobby-controls">
-            <button id="create-btn" class="neon-btn">CREATE ROOM</button>
-            <div class="join-section">
-                <input type="text" id="room-code-input" placeholder="ENTER CODE" maxlength="5">
-                <button id="join-btn" class="neon-btn">JOIN</button>
+    <!-- Welcome Screen (Integrated Lobby) -->
+    <div id="welcome-screen">
+        <div class="stars"></div>
+        <div class="stars2"></div>
+        <div class="stars3"></div>
+
+        <div class="welcome-content">
+            <h1 class="game-title">
+                <span class="pink">PINK</span>
+                <span class="purple">PURPLE</span>
+            </h1>
+            <p class="subtitle">NEON DRIFT ARENA</p>
+
+            <div class="player-input-container">
+                <input type="text" id="player-name-input" placeholder="ENTER YOUR NAME" maxlength="12"
+                    autocomplete="off" autofocus />
+                <div class="input-glow"></div>
             </div>
-            <p id="lobby-status"></p>
+
+            <!-- Room Controls (Integrated) -->
+            <div class="room-controls"
+                style="display: flex; flex-direction: column; gap: 20px; align-items: center; margin-bottom: 40px;">
+                <button id="create-btn" class="start-button" style="width: 300px;">
+                    <span class="btn-text">CREATE ROOM</span>
+                    <span class="btn-glow"></span>
+                </button>
+
+                <div class="join-container" style="display: flex; gap: 10px;">
+                    <input type="text" id="room-code-input" placeholder="CODE" maxlength="5"
+                        style="background: rgba(0,0,0,0.5); border: 2px solid #0ff; color: #fff; padding: 15px; font-family: 'Orbitron'; text-align: center; width: 120px; border-radius: 10px;">
+                    <button id="join-btn" class="neon-btn" style="padding: 15px 30px; font-size: 1rem;">JOIN</button>
+                </div>
+                <p id="lobby-status"
+                    style="color: #ff0055; min-height: 24px; font-weight: bold; text-shadow: 0 0 10px #ff0055;"></p>
+            </div>
+
+            <div class="controls-preview">
+                <div class="control-item">
+                    <span class="key">← → ↑</span>
+                    <span class="action">MOVE</span>
+                </div>
+                <div class="control-item">
+                    <span class="key">SPACE</span>
+                    <span class="action">ATTACK</span>
+                </div>
+                <div class="control-item">
+                    <span class="key">SHIFT</span>
+                    <span class="action">DASH</span>
+                </div>
+                <div class="control-item">
+                    <span class="key">G</span>
+                    <span class="action">GRENADE</span>
+                </div>
+            </div>
         </div>
+
+        <div class="version">v1.0.0</div>
     </div>
 
+    <!-- Game Screen -->
     <div id="game-container" style="display: none;">
         <div id="ui-layer">
             <div id="score-board">
@@ -72,7 +121,7 @@
     </div>
 
     <script src="/socket.io/socket.io.js"></script>
-    <script src="game.js"></script>
+    <script type="module" src="game-modular.js"></script>
 </body>
 
 </html>

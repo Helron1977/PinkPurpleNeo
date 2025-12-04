@@ -22,6 +22,7 @@ const io = new Server(server, {
 });
 const path = require('path');
 
+// Serve static files
 app.use(express.static(path.join(__dirname, 'public')));
 
 const PORT = process.env.PORT || 3000;

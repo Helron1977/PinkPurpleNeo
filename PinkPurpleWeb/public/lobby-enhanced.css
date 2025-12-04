@@ -1,0 +1,102 @@
+/* Enhanced Lobby Styles - Additional styles for improved UX */
+
+.name-section {
+    width: 100%;
+    margin-bottom: 10px;
+}
+
+#player-name {
+    background: transparent;
+    border: 2px solid #9393D6;
+    color: #9393D6;
+    padding: 15px;
+    font-size: 1.3rem;
+    font-family: 'Orbitron', sans-serif;
+    text-align: center;
+    width: 300px;
+    text-transform: uppercase;
+    transition: all 0.3s;
+}
+
+#player-name:focus {
+    outline: none;
+    box-shadow: 0 0 20px #9393D6;
+    border-color: #CD62D5;
+    color: #CD62D5;
+}
+
+#player-name::placeholder {
+    color: rgba(147, 147, 214, 0.5);
+}
+
+/* Room Code Display */
+#room-code-display {
+    margin: 20px 0;
+    animation: slideDown 0.3s ease-out;
+}
+
+@keyframes slideDown {
+    from {
+        opacity: 0;
+        transform: translateY(-20px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.room-code-box {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 15px;
+    background: rgba(0, 255, 255, 0.1);
+    border: 2px solid #0ff;
+    border-radius: 10px;
+    padding: 20px 30px;
+    box-shadow: 0 0 30px rgba(0, 255, 255, 0.3);
+}
+
+#room-code-text {
+    font-size: 3rem;
+    font-weight: bold;
+    color: #0ff;
+    text-shadow: 0 0 20px #0ff;
+    letter-spacing: 8px;
+}
+
+.copy-btn {
+    background: transparent;
+    border: 2px solid #0ff;
+    color: #0ff;
+    padding: 10px 15px;
+    font-size: 1.5rem;
+    cursor: pointer;
+    border-radius: 5px;
+    transition: all 0.3s;
+}
+
+.copy-btn:hover {
+    background: #0ff;
+    color: #000;
+    transform: scale(1.1);
+}
+
+.copy-btn:active {
+    transform: scale(0.95);
+}
+
+.room-hint {
+    color: #aaa;
+    font-size: 1rem;
+    margin-top: 10px;
+    animation: pulse 2s infinite;
+}
+
+/* Button states */
+.neon-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
