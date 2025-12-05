@@ -257,6 +257,7 @@ class GameRoom {
             let flags = 1; // Active
             if (p.isHit) flags |= 2;
             flags |= (p.grenadeCount & 0x03) << 2; // 2 bits for grenades (0-3)
+            if (p.lastFacing === 1) flags |= 16; // Bit 4: Facing (0=Left, 1=Right)
 
             buf.writeUInt8(flags, offset++);
             buf.writeUInt8(p.damage, offset++);

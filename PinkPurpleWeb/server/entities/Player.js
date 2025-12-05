@@ -229,9 +229,9 @@ class Player {
 
                 // Dash always goes horizontally in the direction user is facing
                 if (this.lastFacing === 1) {
-                    this.angle = 0; // Right
+                    this.angle = Math.PI; // Right (cos(PI) * -120 = +120)
                 } else {
-                    this.angle = Math.PI; // Left
+                    this.angle = 0; // Left (cos(0) * -120 = -120)
                 }
 
                 this.dashCooldown = 60; // 1 second cooldown
@@ -271,7 +271,10 @@ class Player {
         this.startY = this.y;
         this.velocity = -force;
         this.angle = angleFromAttacker;
-        this.moveCooldown = 30; // Stun for 0.5s
+
+        // Stun / Cannot attack for 0.2s (12 frames)
+        // User requested: "on ne doit pas pouvoir taper pendant 0.2 sec"
+        this.moveCooldown = 12;
     }
 }
 

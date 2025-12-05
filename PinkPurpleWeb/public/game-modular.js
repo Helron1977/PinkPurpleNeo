@@ -133,6 +133,14 @@ network.on('game_event', (event) => {
             if (players[event.to]) {
                 renderer.createExplosion(players[event.to].x, players[event.to].y, players[event.from].color);
                 renderer.addFloatingDamage(players[event.to].x, players[event.to].y, event.damage || 10, '#ff0000');
+
+                // TRIGGER ARCADE ANIMATION
+                // We need IDs. 'event.from' is 'p1'/'p2'
+                const attackerId = players[event.from].isPlayer1 ? 'p1' : 'p2'; // Actually network uses p1 key
+                // players keys are 'p1' and 'p2'.
+
+                renderer.triggerHitEffect(event.from, event.to, event.damage);
+
                 ui.flashScreen();
                 soundManager.playHit();
             }

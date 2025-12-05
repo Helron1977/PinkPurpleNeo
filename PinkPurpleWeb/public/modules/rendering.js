@@ -16,7 +16,19 @@ export class Renderer {
         this.trails = {};
         this.metalBars = [];
         this.animationId = null;
-        this.floatingMessages = []; // For damage/action text
+        this.floatingMessages = [];
+
+        // Hit Impact & Animation
+        this.hitStopTimer = 0;
+        this.hitStopDuration = 0;
+        this.playerAnims = {};
+        this.frameCounter = 0;
+
+        // Camera / Zoom effects
+        this.cameraZoom = 1.0;
+        this.cameraFocus = { x: GAME_CONFIG.WIDTH / 2, y: GAME_CONFIG.HEIGHT / 2 };
+        this.targetZoom = 1.0;
+        this.slowMotionFactor = 1.0;
 
         // Optimization: Off-screen canvas for obstacles
         this.obstaclesCanvas = document.createElement('canvas');
@@ -63,8 +75,8 @@ export class Renderer {
             ctx.rotate(bar.angle);
 
             // Glass effect
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.05)'; // Very transparent white
-            ctx.strokeStyle = bar.color; // Neon border
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.05)';
+            ctx.strokeStyle = bar.color;
             ctx.lineWidth = 2;
 
             // Neon Glow
@@ -84,6 +96,61 @@ export class Renderer {
             ctx.stroke();
 
             ctx.restore();
+        }
+    }
+
+    triggerHitEffect(attackerId, victimId, damage) {
+        const state = this.network.getState();
+        const attacker = state.players[attackerId];
+        const victim = state.players[victimId];
+
+        if (!attacker || !victim) return;
+
+        // Cache frozen state for rendering during HitStop
+        this.frozenPlayers = JSON.parse(JSON.stringify(state.players));
+
+        // 1. FREEZE FRAME (Arrêt sur image) - Balanced (0.6s)
+        this.hitStopDuration = 36; // 36 frames = 0.6s
+        this.hitStopTimer = this.hitStopDuration;
+
+        // 2. ZOOM on Action
+        this.cameraFocus = {
+            x: (attacker.x + victim.x) / 2,
+            y: (attacker.y + victim.y) / 2
+        };
+        this.cameraZoom = 2.0;
+
+        // 3. Slow Motion setup (Matrix Style)
+        this.slowMotionFactor = 0.1; // 10% speed
+
+        // 4. ANIMATION DATA (Distinct Frames)
+        this.playerAnims[attackerId] = {
+            type: 'bat_swing',
+            startTime: Date.now(),
+            duration: 2400,
+            distinct: true
+        };
+
+        this.playerAnims[victimId] = {
+            type: 'deformation',
+            startTime: Date.now(),
+            duration: 2400,
+            seed: Math.random()
+        };
+
+        // 5. Particles
+        if (victim) {
+            for (let i = 0; i < 40; i++) {
+                this.particles.push({
+                    x: victim.x,
+                    y: victim.y,
+                    vx: (Math.random() - 0.5) * 40,
+                    vy: (Math.random() - 0.5) * 40,
+                    life: 2.0,
+                    color: i % 2 === 0 ? '#ff0044' : '#fff', // White hot
+                    type: 'spark'
+                });
+            }
         }
     }
 
@@ -118,27 +185,74 @@ export class Renderer {
         const shakeX = (Math.random() - 0.5) * this.shakeIntensity;
         const shakeY = (Math.random() - 0.5) * this.shakeIntensity;
 
-        // Clear screen
+        // Clear screen ALWAYS
         this.ctx.setTransform(1, 0, 0, 1, 0, 0);
         this.ctx.fillStyle = COLORS.BACKGROUND;
         this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
-        // Apply transform with shake
-        this.ctx.setTransform(
-            this.scale, 0, 0, this.scale,
-            (this.canvas.width - GAME_CONFIG.WIDTH * this.scale) / 2 + shakeX,
-            (this.canvas.height - GAME_CONFIG.HEIGHT * this.scale) / 2 + shakeY
-        );
+        // Hit Stop / Slow Motion Logic
+        let renderPlayers = players; // Default to live state
+
+        if (this.hitStopTimer > 0) {
+            this.hitStopTimer--;
+
+            // USE FROZEN STATE during HitStop
+            if (this.frozenPlayers) {
+                renderPlayers = this.frozenPlayers;
+            }
+
+            // Invert flash at start (Impact)
+            if (this.hitStopTimer > this.hitStopDuration - 5) {
+                this.ctx.filter = 'invert(1) contrast(2)';
+            } else {
+                this.ctx.filter = 'none';
+            }
+
+            // While frozen, keep zoom tight
+            this.targetZoom = 2.5;
+
+        } else {
+            // Resume speed
+            this.ctx.filter = 'none';
+            this.frameCounter++;
+            this.frozenPlayers = null; // Clear freeze cache
+
+            // Smoothly zoom out
+            this.targetZoom = 1.0;
+            this.slowMotionFactor = 1.0;
+        }
+
+        // Smooth Camera Zoom
+        this.cameraZoom += (this.targetZoom - this.cameraZoom) * 0.1;
+
+        // If zooming out, drift focus back to center
+        if (this.cameraZoom < 1.1) {
+            this.cameraFocus.x += (GAME_CONFIG.WIDTH / 2 - this.cameraFocus.x) * 0.1;
+            this.cameraFocus.y += (GAME_CONFIG.HEIGHT / 2 - this.cameraFocus.y) * 0.1;
+        }
+
+        // Apply Transform: Center on cameraFocus with Zoom
+        const centerX = this.canvas.width / 2;
+        const centerY = this.canvas.height / 2;
+
+        // Calculate partial scale including screen fit scale
+        const totalScale = this.scale * this.cameraZoom;
+
+        // Translate to focus point, scale, untranslate to screen center
+        const tx = centerX - (this.cameraFocus.x * totalScale) + shakeX;
+        const ty = centerY - (this.cameraFocus.y * totalScale) + shakeY;
+
+        this.ctx.setTransform(totalScale, 0, 0, totalScale, tx, ty);
 
         this.drawBackground();
         this.drawObstacles();
         this.drawFloor();
-        this.drawPlayers(players);
+        this.drawPlayers(renderPlayers);
         this.drawGrenades(grenades);
         this.drawExplosions(explosions);
         this.drawParticles();
         this.drawScoreCircles(players, scores);
-        this.drawFloatingMessages(); // Draw damage/action text
+        this.drawFloatingMessages();
 
         this.animationId = requestAnimationFrame(() => this.draw());
     }
@@ -193,8 +307,6 @@ export class Renderer {
     drawObstacles() {
         const ctx = this.ctx;
         ctx.save();
-        // Draw the pre-rendered obstacles image
-        // The main context already handles the global scale transform
         ctx.drawImage(this.obstaclesCanvas, 0, 0);
         ctx.restore();
     }
@@ -246,22 +358,146 @@ export class Renderer {
             ctx.stroke();
             ctx.restore();
 
-            // Draw player
-            ctx.shadowBlur = 20;
-            ctx.shadowColor = p.color;
-            ctx.beginPath();
-            ctx.fillStyle = p.color;
-            const r = GAME_CONFIG.PLAYER_RADIUS + Math.sin(Date.now() / 100) * 2;
-            ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
-            ctx.fill();
-
-            if (p.isHit) {
-                ctx.strokeStyle = COLORS.WHITE;
-                ctx.lineWidth = 3;
-                ctx.stroke();
-            }
-            ctx.shadowBlur = 0;
+            // Draw player model (Sphere + Bat)
+            this.drawPlayerModel(ctx, p, id);
         }
+    }
+
+    drawPlayerModel(ctx, p, id) {
+        ctx.save();
+        ctx.translate(p.x, p.y);
+
+        const anim = this.playerAnims[id];
+        let scaleX = 1, scaleY = 1;
+        let rotation = 0;
+        let isGlitching = false;
+
+        // --- VICTIM DEFORMATION ---
+        if (anim && anim.type === 'deformation') {
+            const elapsed = Date.now() - anim.startTime;
+            if (elapsed < anim.duration) {
+                const progress = elapsed / anim.duration;
+                // Squash and stretch sinusoidal
+                const intensity = (1 - progress) * 1.0;
+                scaleX = 1 + Math.sin(progress * Math.PI * 10) * intensity * 0.5;
+                scaleY = 1 - Math.sin(progress * Math.PI * 10) * intensity * 0.5;
+
+                // Add jitter (Glitch)
+                if (Math.random() < 0.4 * intensity) {
+                    ctx.translate((Math.random() - 0.5) * 30, (Math.random() - 0.5) * 15);
+                    isGlitching = true;
+                }
+            } else {
+                delete this.playerAnims[id];
+            }
+        }
+
+        // Apply transformations
+        ctx.rotate(rotation);
+        ctx.scale(scaleX, scaleY);
+
+        // Shadow/Glow
+        ctx.shadowBlur = 20;
+        ctx.shadowColor = p.color;
+
+        if (isGlitching) {
+            ctx.fillStyle = '#fff'; // Flash white on glitch
+            ctx.shadowColor = '#ff0000';
+        } else {
+            ctx.fillStyle = p.color;
+        }
+
+        // Draw Spherical Body
+        ctx.beginPath();
+        const r = GAME_CONFIG.PLAYER_RADIUS;
+        ctx.arc(0, 0, r, 0, Math.PI * 2);
+        ctx.fill();
+
+        // --- ATTACK ANIMATION (BAT) - DISTINCT FRAMES STYLE ---
+        if (anim && anim.type === 'bat_swing') {
+            const elapsed = Date.now() - anim.startTime;
+            if (elapsed < anim.duration) {
+                const progress = elapsed / anim.duration;
+                const facing = p.facing || 1;
+                let swingAngle = 0;
+
+                // 3 DISTINCT KEYFRAMES PUNCHY
+                if (progress < 0.3) {
+                    // Wind Up
+                    const t = progress / 0.3;
+                    swingAngle = -Math.PI / 1.5 * facing * t;
+                } else if (progress < 0.35) {
+                    // SMASH START
+                    swingAngle = 0;
+                    // Motion Smear
+                    ctx.save();
+                    ctx.rotate(swingAngle);
+                    ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+                    ctx.beginPath();
+                    ctx.arc(0, 0, 120, -1.0, 0.5);
+                    ctx.fill();
+                    ctx.restore();
+                } else if (progress < 0.6) {
+                    // HOLD IMPACT
+                    swingAngle = Math.PI / 3 * facing;
+
+                    // Shockwave ring
+                    ctx.save();
+                    ctx.strokeStyle = '#fff';
+                    ctx.lineWidth = 3;
+                    ctx.beginPath();
+                    ctx.arc(40 * facing, 0, 50 + (progress - 0.35) * 150, 0, Math.PI * 2);
+                    ctx.stroke();
+                    ctx.restore();
+
+                    // Glitch Effect
+                    if (Math.random() > 0.5) ctx.fillStyle = '#fff';
+                } else {
+                    // Follow Through
+                    const t = (progress - 0.6) / 0.4;
+                    swingAngle = (Math.PI / 3 + Math.PI / 2 * t) * facing;
+                }
+
+                // Draw Bat
+                ctx.save();
+                ctx.rotate(swingAngle);
+
+                // Handle
+                ctx.fillStyle = '#654321';
+                ctx.fillRect(15, -4, 20, 8);
+
+                // Barrel
+                ctx.fillStyle = '#ddd';
+                ctx.beginPath();
+                ctx.moveTo(35, -4);
+                ctx.lineTo(100, -10); // Tip Top
+                ctx.bezierCurveTo(110, -5, 110, 5, 100, 10); // Rounded Tip
+                ctx.lineTo(35, 4);
+                ctx.fill();
+
+                // Shine line
+                ctx.strokeStyle = '#fff';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(40, -2);
+                ctx.lineTo(90, -4);
+                ctx.stroke();
+
+                ctx.restore();
+
+            } else {
+                delete this.playerAnims[id];
+            }
+        }
+
+        // Regular isHit overlay
+        if (p.isHit && !isGlitching) {
+            ctx.strokeStyle = COLORS.WHITE;
+            ctx.lineWidth = 3;
+            ctx.stroke();
+        }
+
+        ctx.restore();
     }
 
     drawGrenades(grenades) {
