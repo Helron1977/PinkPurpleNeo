@@ -210,7 +210,9 @@ input[type="text"]:focus {
 #joystick-zone {
     width: 180px;
     height: 180px;
-    background: rgba(255, 255, 255, 0.05);
+    width: 180px;
+    height: 180px;
+    background: rgba(255, 255, 255, 0.02);
     border: 2px solid rgba(0, 255, 255, 0.2);
     border-radius: 50%;
     position: relative;
@@ -231,14 +233,16 @@ input[type="text"]:focus {
 
 #action-buttons {
     display: flex;
-    gap: 20px;
+    display: flex;
+    gap: 30px;
+    align-items: flex-end;
     align-items: flex-end;
     padding-bottom: 20px;
 }
 
 .touch-btn {
-    width: 80px;
-    height: 80px;
+    width: 90px;
+    height: 90px;
     border-radius: 50%;
     background: rgba(0, 0, 0, 0.5);
     border: 2px solid rgba(255, 255, 255, 0.3);
@@ -257,8 +261,8 @@ input[type="text"]:focus {
 }
 
 .big-btn {
-    width: 100px;
-    height: 100px;
+    width: 110px;
+    height: 110px;
     border-color: #ff0055;
     box-shadow: 0 0 15px #ff0055;
     font-size: 1.5rem;

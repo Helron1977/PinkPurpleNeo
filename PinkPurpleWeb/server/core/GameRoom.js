@@ -117,10 +117,44 @@ class GameRoom {
         // Update grenades
         for (let i = this.grenades.length - 1; i >= 0; i--) {
             const grenade = this.grenades[i];
-            grenade.update(this.obstacles);
+
+            // Sticky Logic
+            if (grenade.attachedTo) {
+                const target = this.players[grenade.attachedTo];
+                if (target) {
+                    grenade.x = target.x;
+                    grenade.y = target.y;
+                    grenade.startX = target.x;
+                    grenade.startY = target.y;
+                    grenade.age++; // Still age while stuck
+                } else {
+                    grenade.attachedTo = null; // Target disconnected/died
+                }
+            } else {
+                // Normal physics
+                grenade.update(this.obstacles);
+
+                // Check collision with players for Sticking
+                // User requirement: Stuck to Opponent
+                const checkStick = (pid) => {
+                    const p = this.players[pid];
+                    if (p && grenade.owner !== p.id) { // Only stick to non-owner (opponent)
+                        const dx = p.x - grenade.x;
+                        const dy = p.y - grenade.y;
+                        const dist = Math.sqrt(dx * dx + dy * dy);
+                        if (dist < 40) { // Player Radius (25) + Grenade Radius (12.5) approx
+                            grenade.attachedTo = pid;
+                        }
+                    }
+                };
+
+                // We don't know who is P1/P2 by ID easily in the loop, but players map keys are 'p1', 'p2'
+                if (this.players['p1']) checkStick('p1');
+                if (this.players['p2']) checkStick('p2');
+            }
 
             // Check if grenade exploded
-            if (grenade.exploded) {
+            if (grenade.exploded || grenade.age >= 60) {
                 // Explosion! Check for players in blast radius
                 const BLAST_RADIUS = 12.5 * 6; // 6x grenade size
 

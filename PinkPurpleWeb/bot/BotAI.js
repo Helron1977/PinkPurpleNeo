@@ -134,15 +134,14 @@ class BotAI {
      * @param {number} startX - Position X de départ
      * @param {number} startY - Position Y de départ
      * @param {number} currentAngle - Angle actuel du joueur (le dash garde cet angle)
+     * @param {number} lastFacing - Direction du regard (1 ou -1)
      */
-    calculateDashRange(startX, startY, currentAngle) {
+    calculateDashRange(startX, startY, currentAngle, lastFacing) {
         // Dash : velocity = -120, garde l'angle actuel (ou 0 si vertical)
         const velocity = -120;
-        // Si l'angle est presque vertical, le dash devient horizontal (comme dans server.js)
-        let dashAngle = currentAngle;
-        if (Math.abs(currentAngle - Math.PI / 2) < 0.1) {
-            dashAngle = 0; // Horizontal vers la droite
-        }
+
+        // Nouvelle logique Dash : Toujours horizontal selon lastFacing
+        const dashAngle = (lastFacing === 1) ? 0 : Math.PI; // Right or Left
 
         let t = 0;
         const timeStep = 0.1;
@@ -232,17 +231,19 @@ class BotAI {
             if (me.y < enemy.y - 100 && Math.abs(dx) < 200) {
                 actions.push('SLAM');
             }
+
+            // DOWN (Fast Fall)
+            if (me.y < enemy.y - 100 && Math.abs(dx) < 100) {
+                actions.push('DOWN');
+            }
         }
 
         // Dash (vérifier la portée réelle avec l'angle actuel)
         if (me.dashCooldown === 0 && distance > ATTACK_RANGE) {
-            // Le dash garde l'angle actuel (ou devient horizontal si vertical)
-            let dashAngle = me.angle;
-            if (Math.abs(me.angle - Math.PI / 2) < 0.1) {
-                dashAngle = 0; // Horizontal vers la droite
-            }
+            // Nouvelle logique Dash
+            const dashAngle = (me.lastFacing === 1) ? 0 : Math.PI;
 
-            const dashRange = this.calculateDashRange(me.x, me.y, me.angle);
+            const dashRange = this.calculateDashRange(me.x, me.y, me.angle, me.lastFacing);
 
             // Utiliser le dash seulement si la portée est suffisante et si on peut se rapprocher
             // Vérifier que le dash nous rapproche de l'adversaire
@@ -292,13 +293,10 @@ class BotAI {
 
         // 2. Si à distance moyenne -> DASH vers l'adversaire (avec vérification de portée)
         if (distance > ATTACK_RANGE && me.dashCooldown === 0) {
-            // Le dash garde l'angle actuel (ou devient horizontal si vertical)
-            let dashAngle = me.angle;
-            if (Math.abs(me.angle - Math.PI / 2) < 0.1) {
-                dashAngle = 0; // Horizontal vers la droite
-            }
+            // Nouvelle logique Dash
+            const dashAngle = (me.lastFacing === 1) ? 0 : Math.PI;
 
-            const dashRange = this.calculateDashRange(me.x, me.y, me.angle);
+            const dashRange = this.calculateDashRange(me.x, me.y, me.angle, me.lastFacing);
 
             // Vérifier que le dash nous rapproche de l'adversaire
             const dashVx = Math.cos(dashAngle) * -120;

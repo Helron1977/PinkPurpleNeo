@@ -39,6 +39,7 @@ class Player {
         }
         this.t = 0;
         this.isHit = false;
+        this.lastFacing = 1; // 1 for Right, -1 for Left
     }
 
     update(obstacles) {
@@ -213,7 +214,7 @@ class Player {
             this.velocity = 80; // High downward velocity
             this.angle = Math.PI / 2; // Straight down (90°)
             this.slamActiveTimer = 30; // Attack active for 0.5s (30 frames at 60fps)
-            this.moveCooldown = 60; // Cannot move for 1 second
+            this.moveCooldown = 30; // Cannot move for 0.5 second (reduced from 1s)
             this.isHit = true;
             return 'slam';
         }
@@ -225,12 +226,14 @@ class Player {
                 this.startX = this.x;
                 this.startY = this.y;
                 this.velocity = -120; // Very high horizontal velocity
-                // Maintain current angle or use slight upward angle
-                if (Math.abs(this.angle - Math.PI / 2) < 0.1) {
-                    // If currently vertical, dash horizontally
-                    this.angle = 0; // Horizontal
+
+                // Dash always goes horizontally in the direction user is facing
+                if (this.lastFacing === 1) {
+                    this.angle = 0; // Right
+                } else {
+                    this.angle = Math.PI; // Left
                 }
-                // Otherwise keep current angle
+
                 this.dashCooldown = 60; // 1 second cooldown
                 return 'dash';
             }
@@ -243,9 +246,21 @@ class Player {
         this.startY = this.y;
         this.velocity = -50;
 
-        if (key === 'LEFT') this.angle = Math.PI / 3; // 60° up-left
-        else if (key === 'RIGHT') this.angle = 2 * Math.PI / 3; // 120° up-right
+        if (key === 'LEFT') {
+            this.angle = Math.PI / 3; // 60° up-left
+            this.lastFacing = -1;
+        }
+        else if (key === 'RIGHT') {
+            this.angle = 2 * Math.PI / 3; // 120° up-right
+            this.lastFacing = 1;
+        }
         else if (key === 'UP') this.angle = Math.PI / 2; // 90° straight up
+        else if (key === 'DOWN') {
+            // Fast fall / Descent control
+            this.angle = -Math.PI / 2; // 270° straight down
+            this.velocity = -50; // Downward velocity (sin(-90)=-1, vy=50)
+            // Note: Gravity will also accelerate this
+        }
     }
 
     getEjected(angleFromAttacker) {
@@ -256,6 +271,7 @@ class Player {
         this.startY = this.y;
         this.velocity = -force;
         this.angle = angleFromAttacker;
+        this.moveCooldown = 30; // Stun for 0.5s
     }
 }
 

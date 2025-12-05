@@ -43,6 +43,8 @@ export class InputManager {
         if (CONTROLS.LEFT.includes(code)) return 'LEFT';
         if (CONTROLS.RIGHT.includes(code)) return 'RIGHT';
         if (CONTROLS.UP.includes(code)) return 'UP';
+        if (CONTROLS.DOWN && CONTROLS.DOWN.includes(code)) return 'DOWN'; // Ensure DOWN exists in constants
+        if (['ArrowDown', 'KeyS'].includes(code)) return 'DOWN'; // Fallback
         if (CONTROLS.SLAM.includes(code)) return 'SLAM';
         if (CONTROLS.HIT.includes(code)) return 'HIT';
         if (CONTROLS.DASH.includes(code)) return 'DASH';
@@ -156,12 +158,16 @@ export class InputManager {
                 currentAction = dx > 0 ? 'RIGHT' : 'LEFT';
             } else if (dy < -verticalThreshold && absX < horizontalThreshold) {
                 currentAction = 'UP';
+            } else if (dy > verticalThreshold && absX < horizontalThreshold) {
+                currentAction = 'DOWN';
             } else {
                 const angle = Math.atan2(dy, dx);
                 if (angle > -Math.PI / 3 && angle < Math.PI / 3) {
                     currentAction = 'RIGHT';
                 } else if (angle > -2 * Math.PI / 3 && angle < -Math.PI / 3) {
                     currentAction = 'UP';
+                } else if (angle > Math.PI / 3 && angle < 2 * Math.PI / 3) {
+                    currentAction = 'DOWN';
                 } else {
                     currentAction = 'LEFT';
                 }

@@ -13,6 +13,7 @@ class Grenade {
         this.owner = owner; // ID of player who threw it
         this.age = 0; // Timer in frames
         this.exploded = false;
+        this.attachedTo = null; // ID of player it is stuck to
     }
 
     update(obstacles) {
