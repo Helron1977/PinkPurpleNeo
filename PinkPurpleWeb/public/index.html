@@ -6,119 +6,71 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>PinkPurple: Neon Drift</title>
     <link rel="stylesheet" href="style.css">
-    <link rel="stylesheet" href="welcome.css">
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
 </head>
 
 <body>
-    <!-- Welcome Screen (Integrated Lobby) -->
-    <div id="welcome-screen">
-        <div class="stars"></div>
-        <div class="stars2"></div>
-        <div class="stars3"></div>
+    <!-- Lobby Screen -->
+    <div id="lobby-container">
+        <div class="lobby-controls">
+            <h1 class="neon-title">PINK PURPLE</h1>
 
-        <div class="welcome-content">
-            <h1 class="game-title">
-                <span class="pink">PINK</span>
-                <span class="purple">PURPLE</span>
-            </h1>
-            <p class="subtitle">NEON DRIFT ARENA</p>
+            <input type="text" id="player-name-input" placeholder="ENTER NAME" maxlength="12" autocomplete="off">
 
-            <div class="player-input-container">
-                <input type="text" id="player-name-input" placeholder="ENTER YOUR NAME" maxlength="12"
-                    autocomplete="off" autofocus />
-                <div class="input-glow"></div>
+            <button id="create-btn" class="neon-btn">CREATE ROOM</button>
+
+            <div class="join-section">
+                <input type="text" id="room-code-input" placeholder="CODE" maxlength="5">
+                <button id="join-btn" class="neon-btn" style="border-color: var(--secondary-color);">JOIN</button>
             </div>
 
-            <!-- Room Controls (Integrated) -->
-            <div class="room-controls"
-                style="display: flex; flex-direction: column; gap: 20px; align-items: center; margin-bottom: 40px;">
-                <button id="create-btn" class="start-button" style="width: 300px;">
-                    <span class="btn-text">CREATE ROOM</span>
-                    <span class="btn-glow"></span>
-                </button>
-
-                <div class="join-container" style="display: flex; gap: 10px;">
-                    <input type="text" id="room-code-input" placeholder="CODE" maxlength="5"
-                        style="background: rgba(0,0,0,0.5); border: 2px solid #0ff; color: #fff; padding: 15px; font-family: 'Orbitron'; text-align: center; width: 120px; border-radius: 10px;">
-                    <button id="join-btn" class="neon-btn" style="padding: 15px 30px; font-size: 1rem;">JOIN</button>
-                </div>
-                <p id="lobby-status"
-                    style="color: #ff0055; min-height: 24px; font-weight: bold; text-shadow: 0 0 10px #ff0055;"></p>
-            </div>
-
-            <div class="controls-preview">
-                <div class="control-item">
-                    <span class="key">← → ↑</span>
-                    <span class="action">MOVE</span>
-                </div>
-                <div class="control-item">
-                    <span class="key">SPACE</span>
-                    <span class="action">ATTACK</span>
-                </div>
-                <div class="control-item">
-                    <span class="key">SHIFT</span>
-                    <span class="action">DASH</span>
-                </div>
-                <div class="control-item">
-                    <span class="key">G</span>
-                    <span class="action">GRENADE</span>
-                </div>
-            </div>
+            <p id="lobby-status" style="color: #ff0055; min-height: 24px; font-weight: bold; margin-top: 10px;"></p>
         </div>
-
-        <div class="version">v1.0.0</div>
     </div>
 
-    <!-- Game Screen -->
-    <div id="game-container" style="display: none;">
+    <!-- Game UI Overlay -->
+    <div id="game-ui" style="display: none;">
         <div id="ui-layer">
-            <div id="score-board">
-                <span id="p1-score" class="score p1">0</span>
-                <span class="divider">-</span>
-                <span id="p2-score" class="score p2">0</span>
-            </div>
-            <div id="message-container">
-                <p id="status-text">Waiting for players...</p>
-                <div id="room-display"
-                    style="color: #fff; font-family: 'Orbitron'; font-size: 1.5rem; margin-top: 10px;"></div>
-            </div>
-            <div id="controls-hint">
-                <div class="generic-controls">
-                    <span>CONTROLS</span>
-                    <div class="keys">
-                        <div class="key">← → ↑ (Move)</div>
-                        <div class="key">↓ (Slam)</div>
-                        <div class="key">SPACE (Attack)</div>
-                        <div class="key">SHIFT (Dash)</div>
-                        <div class="key">G (Grenade)</div>
-                    </div>
+            <!-- Top Bar: Controls Hint & Room Info -->
+            <div
+                style="position: absolute; top: 20px; width: 100%; display: flex; justify-content: center; pointer-events: none;">
+                <div id="controls-hint">
+                    <div class="key"><span>← → ↑</span> MOVE</div>
+                    <div class="key"><span>↓</span> SLAM</div>
+                    <div class="key"><span>SPACE</span> ATTACK</div>
+                    <div class="key"><span>SHIFT</span> DASH</div>
+                    <div class="key"><span>G</span> GRENADE</div>
                 </div>
             </div>
 
-            <!-- Touch Controls Overlay -->
-            <div id="touch-controls" style="display: none;">
+            <!-- Message Center -->
+            <div id="message-container"
+                style="position: absolute; top: 20%; left: 50%; transform: translate(-50%, -50%); text-align: center;">
+                <p id="status-text" style="font-size: 2rem; color: #aaa; text-shadow: 0 0 10px #000;">Waiting for
+                    players...</p>
+                <div id="room-display" style="color: #fff; font-size: 1.5rem; margin-top: 10px;"></div>
+            </div>
+
+            <!-- Touch Controls (Mobile/Tablet) -->
+            <div id="touch-controls">
                 <div class="left-controls">
                     <div id="joystick-zone">
                         <div id="joystick-knob"></div>
-                        <!-- Visual segments for better UX -->
-                        <div class="joystick-segment segment-left"></div>
-                        <div class="joystick-segment segment-up"></div>
-                        <div class="joystick-segment segment-right"></div>
                     </div>
                 </div>
                 <div id="action-buttons">
                     <button id="btn-grenade" class="touch-btn small-btn">💣</button>
-                    <div class="main-actions">
-                        <button id="btn-dash" class="touch-btn">⚡</button>
+                    <div style="display: flex; gap: 15px; align-items: flex-end;">
+                        <button id="btn-dash" class="touch-btn" id="btn-dash">⚡</button>
                         <button id="btn-attack" class="touch-btn big-btn">⚔️</button>
                         <button id="btn-slam" class="touch-btn slam-btn">⬇️</button>
                     </div>
                 </div>
             </div>
         </div>
-        <canvas id="game-canvas"></canvas>
     </div>
+
+    <canvas id="game-canvas"></canvas>
 
     <script src="/socket.io/socket.io.js"></script>
     <script type="module" src="game-modular.js"></script>

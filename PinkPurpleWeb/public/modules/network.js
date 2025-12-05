@@ -75,6 +75,12 @@ export class NetworkManager {
         this.socket.on('map_update', (obstacles) => {
             this.emit('map_update', obstacles);
         });
+
+        // Player names update
+        this.socket.on('update_names', (names) => {
+            this.playerNames = names;
+            this.emit('update_names', names);
+        });
     }
 
     // Decode binary state protocol
@@ -177,7 +183,8 @@ export class NetworkManager {
             players: this.players,
             scores: this.currentScores,
             grenades: this.grenades,
-            explosions: this.explosions
+            explosions: this.explosions,
+            names: this.playerNames || { p1: 'P1', p2: 'P2' }
         };
     }
 }

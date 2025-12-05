@@ -20,8 +20,8 @@ const renderer = new Renderer(canvas, network);
 const input = new InputManager(network, soundManager);
 
 // === WELCOME SCREEN / LOBBY LOGIC ===
-const welcomeScreen = document.getElementById('welcome-screen');
-const gameContainer = document.getElementById('game-container');
+const welcomeScreen = document.getElementById('lobby-container');
+const gameContainer = document.getElementById('game-ui');
 const playerNameInput = document.getElementById('player-name-input');
 const createBtn = document.getElementById('create-btn');
 const joinBtn = document.getElementById('join-btn');
@@ -32,10 +32,8 @@ const savedName = localStorage.getItem('pinkpurple_player_name');
 if (savedName) {
     playerNameInput.value = savedName;
 } else {
-    // Generate random cool name
-    const adjectives = ['Neon', 'Cyber', 'Pixel', 'Retro', 'Glitch', 'Turbo', 'Hyper'];
-    const nouns = ['Warrior', 'Knight', 'Ninja', 'Racer', 'Pilot', 'Hero', 'Legend'];
-    const randomName = `${adjectives[Math.floor(Math.random() * adjectives.length)]}${nouns[Math.floor(Math.random() * nouns.length)]}${Math.floor(Math.random() * 100)}`;
+    // Generate random simple name: Player + Number
+    const randomName = `Player${Math.floor(Math.random() * 1000)}`;
     playerNameInput.value = randomName;
 }
 
@@ -61,27 +59,30 @@ function prepareGame() {
         // Shake animation
         playerNameInput.style.animation = 'shake 0.5s';
         setTimeout(() => playerNameInput.style.animation = '', 500);
-        return false;
+        return null;
     }
 
     localStorage.setItem('pinkpurple_player_name', playerName);
     startMusic();
-    return true;
+    return playerName;
 }
 
 // Create Room
 createBtn.addEventListener('click', () => {
-    if (prepareGame()) {
-        socket.emit('create_room');
+    const name = prepareGame();
+    if (name) {
+        socket.emit('create_room', name);
     }
 });
 
 // Join Room
 joinBtn.addEventListener('click', () => {
-    if (prepareGame()) {
+    const name = prepareGame();
+    if (name) {
         const code = roomCodeInput.value.trim();
         if (code) {
-            socket.emit('join_room', code);
+            // Send object with roomId and playerName
+            socket.emit('join_room', { roomId: code, playerName: name });
         } else {
             ui.setLobbyStatus("ENTER A CODE");
         }
@@ -102,7 +103,7 @@ document.head.appendChild(style);
 // Setup network event handlers
 network.on('joined_room', (data) => {
     // Switch to game view
-    welcomeScreen.style.display = 'none'; // Hide welcome/lobby
+    // welcomeScreen.style.display = 'none'; // Handled by ui.showGame()
     ui.showGame();
     ui.setRoomCode(data.roomId);
     ui.setPlayerStatus(data.role);

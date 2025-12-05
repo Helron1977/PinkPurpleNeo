@@ -1,92 +1,139 @@
-/* Global Styles */
+:root {
+    --primary-color: #00f3ff;
+    /* Cyan Néon */
+    --secondary-color: #bc13fe;
+    /* Violet Néon */
+    --bg-dark: #050510;
+    --bg-panel: rgba(20, 20, 35, 0.7);
+    --glass-border: rgba(255, 255, 255, 0.1);
+}
+
 body {
     margin: 0;
     overflow: hidden;
-    background-color: #050510;
+    background: radial-gradient(circle at center, #1a1a2e 0%, #000000 100%);
+    color: #fff;
     font-family: 'Orbitron', sans-serif;
-    color: white;
-    touch-action: none;
-    /* Prevent browser zooming/scrolling */
-}
-
-/* Lobby Styles */
-#lobby-container {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
     display: flex;
-    flex-direction: column;
     justify-content: center;
     align-items: center;
-    background: radial-gradient(circle at center, #1a1a2e 0%, #000 100%);
-    z-index: 2000;
+    height: 100vh;
+    touch-action: none;
+}
+
+/* --- UI Containers (Glassmorphism) --- */
+#lobby-container,
+#game-ui {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    /* Let clicks pass through to canvas if needed */
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+}
+
+#lobby-container {
+    pointer-events: auto;
+    /* Enable interaction for lobby */
+    background: rgba(0, 0, 0, 0.4);
+    /* Slight dim */
 }
 
 .neon-title {
-    font-size: 5rem;
-    text-shadow: 0 0 20px #d0f, 0 0 40px #0ff;
-    margin-bottom: 50px;
-    animation: pulse 2s infinite;
+    font-size: 4rem;
+    margin-bottom: 2rem;
+    text-transform: uppercase;
+    background: linear-gradient(to right, #bc13fe, #00f3ff);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    text-shadow: 0 0 20px rgba(188, 19, 254, 0.5);
     text-align: center;
+    animation: pulse 3s infinite ease-in-out;
 }
 
 .lobby-controls {
+    background: var(--bg-panel);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    padding: 3rem;
+    border-radius: 20px;
+    border: 1px solid var(--glass-border);
+    box-shadow: 0 0 40px rgba(188, 19, 254, 0.2);
     display: flex;
     flex-direction: column;
     gap: 20px;
     align-items: center;
+    width: 90%;
+    max-width: 400px;
+}
+
+/* --- Inputs & Buttons --- */
+#room-code-input,
+input[type="text"] {
+    background: rgba(0, 0, 0, 0.5);
+    border: 2px solid #333;
+    color: #fff;
+    padding: 15px;
+    font-size: 1.2rem;
+    border-radius: 8px;
+    width: 100%;
+    font-family: 'Orbitron', sans-serif;
+    text-align: center;
+    transition: all 0.3s ease;
+    box-sizing: border-box;
+}
+
+#room-code-input:focus,
+input[type="text"]:focus {
+    border-color: var(--secondary-color);
+    box-shadow: 0 0 15px rgba(188, 19, 254, 0.3);
+    outline: none;
 }
 
 .neon-btn {
     background: transparent;
-    border: 2px solid #0ff;
-    color: #0ff;
-    padding: 15px 40px;
-    font-size: 1.5rem;
+    color: #fff;
+    border: 2px solid var(--primary-color);
+    padding: 15px 0;
+    font-size: 1.2rem;
     font-family: 'Orbitron', sans-serif;
     cursor: pointer;
-    transition: all 0.3s;
-    text-shadow: 0 0 10px #0ff;
-    box-shadow: 0 0 10px #0ff;
+    border-radius: 50px;
+    transition: all 0.3s ease;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    width: 100%;
+    position: relative;
+    overflow: hidden;
 }
 
 .neon-btn:hover {
-    background: #0ff;
+    background: var(--primary-color);
     color: #000;
-    box-shadow: 0 0 30px #0ff;
+    box-shadow: 0 0 30px var(--primary-color);
 }
 
 .join-section {
     display: flex;
     gap: 10px;
+    width: 100%;
 }
 
-#room-code-input {
-    background: transparent;
-    border: 2px solid #d0f;
-    color: #d0f;
-    padding: 15px;
-    font-size: 1.5rem;
-    font-family: 'Orbitron', sans-serif;
-    text-align: center;
-    width: 150px;
-    text-transform: uppercase;
+#join-btn {
+    flex: 1;
+    border-color: var(--secondary-color);
 }
 
-#room-code-input:focus {
-    outline: none;
-    box-shadow: 0 0 20px #d0f;
+#join-btn:hover {
+    background: var(--secondary-color);
+    box-shadow: 0 0 30px var(--secondary-color);
 }
 
-#lobby-status {
-    color: #ff4444;
-    font-size: 1.2rem;
-    height: 30px;
-}
-
-/* Game UI */
+/* --- Game HUD --- */
 #ui-layer {
     position: absolute;
     top: 0;
@@ -97,70 +144,34 @@ body {
     display: flex;
     flex-direction: column;
     justify-content: space-between;
-    padding: 20px;
-    box-sizing: border-box;
-}
-
-#score-board {
-    display: none;
-    /* Rendered on Canvas now */
-}
-
-#message-container {
-    position: absolute;
-    top: 20%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    text-align: center;
-}
-
-#main-title {
-    font-size: 5rem;
-    text-shadow: 0 0 20px #d0f, 0 0 40px #0ff;
-    margin: 0;
-}
-
-#status-text {
-    font-size: 2rem;
-    color: #aaa;
-    margin-top: 10px;
 }
 
 #controls-hint {
     display: flex;
     justify-content: center;
-    width: 100%;
-    padding: 0 50px;
-    margin-bottom: 50px;
-    transition: opacity 1s;
-}
-
-.generic-controls {
-    text-align: center;
-}
-
-.generic-controls span {
-    color: #fff;
-    font-size: 1.5rem;
-}
-
-.keys {
-    display: flex;
-    gap: 10px;
-    margin-top: 10px;
-    flex-wrap: wrap;
-    justify-content: center;
+    gap: 20px;
+    padding-top: 20px;
+    opacity: 0.7;
 }
 
 .key {
-    border: 1px solid rgba(255, 255, 255, 0.3);
-    padding: 10px;
-    border-radius: 5px;
-    font-size: 1.2rem;
-    background: rgba(0, 0, 0, 0.5);
+    background: rgba(0, 0, 0, 0.6);
+    border: 1px solid #444;
+    padding: 8px 15px;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    color: #aaa;
+    display: flex;
+    align-items: center;
+    gap: 10px;
 }
 
-/* Touch Controls */
+.key span {
+    color: #fff;
+    font-weight: bold;
+}
+
+/* --- Touch Controls (Tablet/Mobile) --- */
 #touch-controls {
     position: absolute;
     bottom: 20px;
@@ -168,65 +179,42 @@ body {
     width: 100%;
     height: 200px;
     pointer-events: auto;
-    /* Enable touch */
-    display: flex;
+    display: none;
+    /* Hidden on Desktop by default */
     justify-content: space-between;
     padding: 0 40px;
     box-sizing: border-box;
     z-index: 1000;
 }
 
+/* Show touch controls on touch devices or small screens */
+@media (hover: none) and (pointer: coarse),
+(max-width: 1024px) {
+    #touch-controls {
+        display: flex;
+    }
+
+    #controls-hint {
+        display: none !important;
+        /* Hide keyboard hints */
+    }
+}
+
 .left-controls {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 15px;
+    justify-content: flex-end;
 }
 
 #joystick-zone {
-    width: 200px;
-    height: 120px;
+    width: 180px;
+    height: 180px;
     background: rgba(255, 255, 255, 0.05);
-    border: 2px solid rgba(0, 255, 255, 0.3);
-    border-radius: 20px;
+    border: 2px solid rgba(0, 255, 255, 0.2);
+    border-radius: 50%;
     position: relative;
-    touch-action: none;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-/* Visual segments to guide user */
-.joystick-segment {
-    position: absolute;
-    background: rgba(0, 255, 255, 0.05);
-    border: 1px solid rgba(0, 255, 255, 0.2);
-    pointer-events: none;
-}
-
-.segment-left {
-    left: 0;
-    top: 20%;
-    width: 60px;
-    height: 60%;
-    border-radius: 10px 0 0 10px;
-}
-
-.segment-up {
-    left: 50%;
-    top: 0;
-    transform: translateX(-50%);
-    width: 60px;
-    height: 50px;
-    border-radius: 10px 10px 0 0;
-}
-
-.segment-right {
-    right: 0;
-    top: 20%;
-    width: 60px;
-    height: 60%;
-    border-radius: 0 10px 10px 0;
+    backdrop-filter: blur(5px);
 }
 
 #joystick-knob {
@@ -243,29 +231,24 @@ body {
 
 #action-buttons {
     display: flex;
-    flex-direction: column;
-    align-items: flex-end;
     gap: 20px;
-}
-
-.main-actions {
-    display: flex;
-    gap: 15px;
     align-items: flex-end;
-    flex-wrap: wrap;
+    padding-bottom: 20px;
 }
 
 .touch-btn {
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
     background: rgba(0, 0, 0, 0.5);
     border: 2px solid rgba(255, 255, 255, 0.3);
     color: white;
-    border-radius: 50%;
-    font-size: 2rem;
+    font-size: 1.2rem;
     display: flex;
     justify-content: center;
     align-items: center;
+    backdrop-filter: blur(5px);
     user-select: none;
-    touch-action: none;
 }
 
 .touch-btn:active {
@@ -278,37 +261,20 @@ body {
     height: 100px;
     border-color: #ff0055;
     box-shadow: 0 0 15px #ff0055;
-    font-size: 2.5rem;
+    font-size: 1.5rem;
+    font-weight: bold;
 }
 
 #btn-dash {
-    width: 80px;
-    height: 80px;
     border-color: #00ffaa;
     box-shadow: 0 0 15px #00ffaa;
 }
 
-.small-btn {
-    width: 60px;
-    height: 60px;
-    border-color: #ffaa00;
-    box-shadow: 0 0 10px #ffaa00;
-    font-size: 1.5rem;
-    align-self: flex-end;
-    margin-right: 20px;
-}
-
-.slam-btn {
-    width: 80px;
-    height: 80px;
-    border-color: #ff0055;
-    box-shadow: 0 0 15px #ff0055;
-    font-size: 2rem;
-    background: rgba(255, 0, 85, 0.2);
-}
-
+/* Animations */
 @keyframes pulse {
-    0% {
+
+    0%,
+    100% {
         opacity: 0.8;
     }
 
@@ -316,40 +282,4 @@ body {
         opacity: 1;
         text-shadow: 0 0 30px #d0f, 0 0 60px #0ff;
     }
-
-    100% {
-        opacity: 0.8;
-    }
-}
-
-.flash {
-    animation: flash-anim 0.1s;
-}
-
-@keyframes flash-anim {
-    0% {
-        background-color: rgba(255, 255, 255, 0.5);
-    }
-
-    100% {
-        background-color: transparent;
-    }
-}
-
-/* Mobile Adjustments */
-@media (max-width: 768px) {
-    .neon-title {
-        font-size: 3rem;
-    }
-
-    #controls-hint {
-        display: none !important;
-    }
-
-    /* Hide keyboard hints on mobile */
-    #touch-controls {
-        display: flex !important;
-    }
-
-    /* Force show touch controls */
 }

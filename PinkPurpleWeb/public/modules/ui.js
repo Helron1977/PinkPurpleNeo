@@ -6,7 +6,7 @@
 export class UIManager {
     constructor() {
         this.lobbyContainer = document.getElementById('lobby-container');
-        this.gameContainer = document.getElementById('game-container');
+        this.gameContainer = document.getElementById('game-ui');
         this.lobbyStatus = document.getElementById('lobby-status');
         this.roomDisplay = document.getElementById('room-display');
         this.statusText = document.getElementById('status-text');

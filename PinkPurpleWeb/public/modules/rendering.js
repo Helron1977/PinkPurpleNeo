@@ -61,21 +61,28 @@ export class Renderer {
             ctx.save();
             ctx.translate(bar.x, bar.y);
             ctx.rotate(bar.angle);
-            ctx.fillStyle = 'rgba(20, 20, 30, 0.9)';
-            ctx.strokeStyle = bar.color;
-            ctx.lineWidth = 4;
-            ctx.shadowBlur = 15;
+
+            // Glass effect
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.05)'; // Very transparent white
+            ctx.strokeStyle = bar.color; // Neon border
+            ctx.lineWidth = 2;
+
+            // Neon Glow
+            ctx.shadowBlur = 20;
             ctx.shadowColor = bar.color;
+
             ctx.fillRect(0, 0, bar.w, bar.h);
             ctx.strokeRect(0, 0, bar.w, bar.h);
+
+            // Subtle reflection
+            ctx.shadowBlur = 0;
             ctx.beginPath();
-            ctx.moveTo(10, 10);
-            ctx.lineTo(bar.w - 10, bar.h - 10);
-            ctx.moveTo(bar.w - 10, 10);
-            ctx.lineTo(10, bar.h - 10);
+            ctx.moveTo(0, bar.h);
+            ctx.lineTo(bar.w, 0);
             ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
-            ctx.lineWidth = 2;
+            ctx.lineWidth = 1;
             ctx.stroke();
+
             ctx.restore();
         }
     }
@@ -323,9 +330,9 @@ export class Renderer {
 
         const ctx = this.ctx;
         const { WIDTH } = GAME_CONFIG;
+        const names = this.network.getState().names || { p1: 'P1', p2: 'P2' };
 
         ctx.save();
-        ctx.font = "bold 80px Orbitron";
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
 
@@ -343,13 +350,13 @@ export class Renderer {
         }
 
         // Draw circles
-        this.drawDamageCircle(250, 250, GAME_CONFIG.PLAYER1_COLOR, scores.p1 || 0, p1Damage, p1Grenades);
-        this.drawDamageCircle(WIDTH - 250, 250, GAME_CONFIG.PLAYER2_COLOR, scores.p2 || 0, p2Damage, p2Grenades);
+        this.drawDamageCircle(250, 250, GAME_CONFIG.PLAYER1_COLOR, scores.p1 || 0, p1Damage, p1Grenades, names.p1);
+        this.drawDamageCircle(WIDTH - 250, 250, GAME_CONFIG.PLAYER2_COLOR, scores.p2 || 0, p2Damage, p2Grenades, names.p2);
 
         ctx.restore();
     }
 
-    drawDamageCircle(x, y, color, score, damage, grenadeCount) {
+    drawDamageCircle(x, y, color, score, damage, grenadeCount, name) {
         const ctx = this.ctx;
         const radius = GAME_CONFIG.SCORE_CIRCLE_RADIUS;
 
@@ -381,8 +388,17 @@ export class Renderer {
         ctx.shadowBlur = 0;
 
         // Score text
+        ctx.font = "bold 80px Orbitron";
         ctx.fillStyle = color;
         ctx.fillText(score, x, y);
+
+        // Name text
+        ctx.font = "bold 30px Orbitron";
+        ctx.fillStyle = "#ffffff";
+        ctx.shadowBlur = 10;
+        ctx.shadowColor = color;
+        ctx.fillText(name || "Player", x, y - 110);
+        ctx.shadowBlur = 0;
 
         // Grenade indicators
         for (let i = 0; i < 3; i++) {
