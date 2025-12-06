@@ -174,17 +174,22 @@ input[type="text"]:focus {
 /* --- Touch Controls (Tablet/Mobile) --- */
 #touch-controls {
     position: absolute;
-    bottom: 20px;
+    bottom: 0;
     left: 0;
     width: 100%;
-    height: 200px;
+    height: 30vh;
+    /* Responsive height based on viewport */
     pointer-events: auto;
     display: none;
     /* Hidden on Desktop by default */
     justify-content: space-between;
-    padding: 0 40px;
+    align-items: flex-end;
+    padding: min(3vmin, 20px);
+    /* Responsive padding */
     box-sizing: border-box;
     z-index: 1000;
+    /* Subtle gradient to indicate touch area without blocking view */
+    background: linear-gradient(to top, rgba(5, 5, 16, 0.3), transparent);
 }
 
 /* Show touch controls on touch devices or small screens */
@@ -200,78 +205,209 @@ input[type="text"]:focus {
     }
 }
 
+/* === LEFT CONTROLS: Joystick === */
 .left-controls {
     display: flex;
     flex-direction: column;
-    align-items: center;
+    align-items: flex-start;
     justify-content: flex-end;
+    flex-shrink: 0;
 }
 
 #joystick-zone {
-    width: 180px;
-    height: 180px;
-    width: 180px;
-    height: 180px;
-    background: rgba(255, 255, 255, 0.02);
-    border: 2px solid rgba(0, 255, 255, 0.2);
+    /* Responsive sizing based on smallest screen dimension */
+    width: clamp(120px, 20vmin, 180px);
+    height: clamp(120px, 20vmin, 180px);
+    background: rgba(0, 255, 255, 0.05);
+    border: 2px solid rgba(0, 255, 255, 0.3);
     border-radius: 50%;
     position: relative;
-    backdrop-filter: blur(5px);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    transition: all 0.2s ease;
+    /* Subtle neon glow */
+    box-shadow: 0 0 20px rgba(0, 255, 255, 0.1);
+}
+
+/* Active state: More visible when touched */
+#joystick-zone:active,
+#joystick-zone.active {
+    background: rgba(0, 255, 255, 0.1);
+    border-color: rgba(0, 255, 255, 0.6);
+    box-shadow: 0 0 30px rgba(0, 255, 255, 0.3);
 }
 
 #joystick-knob {
-    width: 60px;
-    height: 60px;
-    background: rgba(0, 255, 255, 0.5);
+    /* Size relative to parent */
+    width: 33%;
+    height: 33%;
+    background: radial-gradient(circle, rgba(0, 255, 255, 0.8), rgba(0, 255, 255, 0.4));
+    border: 2px solid rgba(255, 255, 255, 0.5);
     border-radius: 50%;
     position: absolute;
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    box-shadow: 0 0 15px cyan;
+    box-shadow: 0 0 20px cyan, inset 0 0 10px rgba(255, 255, 255, 0.3);
+    transition: transform 0.1s ease-out;
+    pointer-events: none;
+    /* Clicks pass through to zone */
 }
 
+/* === RIGHT CONTROLS: Action Buttons === */
 #action-buttons {
     display: flex;
-    display: flex;
-    gap: 30px;
+    flex-direction: column;
+    gap: min(2vmin, 15px);
     align-items: flex-end;
-    align-items: flex-end;
-    padding-bottom: 20px;
+    justify-content: flex-end;
+    flex-shrink: 0;
 }
 
+/* Primary row: Main actions */
+#action-buttons>div {
+    display: flex;
+    gap: min(2vmin, 15px);
+    align-items: flex-end;
+}
+
+/* Base button style */
 .touch-btn {
-    width: 90px;
-    height: 90px;
+    /* Responsive sizing: min 44px (Apple HIG), max based on screen */
+    width: clamp(44px, 10vmin, 90px);
+    height: clamp(44px, 10vmin, 90px);
     border-radius: 50%;
-    background: rgba(0, 0, 0, 0.5);
-    border: 2px solid rgba(255, 255, 255, 0.3);
+    background: rgba(20, 20, 40, 0.6);
+    border: 2px solid rgba(255, 255, 255, 0.2);
     color: white;
-    font-size: 1.2rem;
+    font-size: clamp(1.2rem, 3vmin, 1.8rem);
     display: flex;
     justify-content: center;
     align-items: center;
-    backdrop-filter: blur(5px);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
     user-select: none;
+    -webkit-user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    /* Remove iOS tap highlight */
+    cursor: pointer;
+    transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    overflow: hidden;
+    /* Default subtle glow */
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
 }
 
+/* Pressed state: Immediate visual feedback */
 .touch-btn:active {
-    background: rgba(255, 255, 255, 0.3);
-    transform: scale(0.95);
+    transform: scale(0.92);
+    background: rgba(255, 255, 255, 0.2);
+    box-shadow: inset 0 0 20px rgba(255, 255, 255, 0.3);
 }
 
+/* Small button variant (Grenade) */
+.small-btn {
+    width: clamp(40px, 8vmin, 70px);
+    height: clamp(40px, 8vmin, 70px);
+    font-size: clamp(1rem, 2.5vmin, 1.4rem);
+    opacity: 0.7;
+    /* Less prominent */
+}
+
+.small-btn:active {
+    opacity: 1;
+}
+
+/* Big button variant (Attack - Primary action) */
 .big-btn {
-    width: 110px;
-    height: 110px;
-    border-color: #ff0055;
-    box-shadow: 0 0 15px #ff0055;
-    font-size: 1.5rem;
+    width: clamp(56px, 13vmin, 110px);
+    height: clamp(56px, 13vmin, 110px);
+    border-color: rgba(255, 0, 85, 0.6);
+    background: rgba(255, 0, 85, 0.15);
+    box-shadow: 0 0 20px rgba(255, 0, 85, 0.3),
+        0 4px 15px rgba(0, 0, 0, 0.4);
+    font-size: clamp(1.4rem, 4vmin, 2rem);
     font-weight: bold;
 }
 
+.big-btn:active {
+    background: rgba(255, 0, 85, 0.3);
+    box-shadow: 0 0 30px rgba(255, 0, 85, 0.5),
+        inset 0 0 20px rgba(255, 0, 85, 0.4);
+}
+
+/* Dash button styling */
 #btn-dash {
-    border-color: #00ffaa;
-    box-shadow: 0 0 15px #00ffaa;
+    border-color: rgba(0, 255, 170, 0.6);
+    background: rgba(0, 255, 170, 0.1);
+    box-shadow: 0 0 15px rgba(0, 255, 170, 0.2);
+}
+
+#btn-dash:active {
+    background: rgba(0, 255, 170, 0.25);
+    box-shadow: 0 0 25px rgba(0, 255, 170, 0.4);
+}
+
+/* Slam button styling */
+.slam-btn {
+    border-color: rgba(188, 19, 254, 0.6);
+    background: rgba(188, 19, 254, 0.1);
+    box-shadow: 0 0 15px rgba(188, 19, 254, 0.2);
+}
+
+.slam-btn:active {
+    background: rgba(188, 19, 254, 0.25);
+    box-shadow: 0 0 25px rgba(188, 19, 254, 0.4);
+}
+
+/* Grenade button styling */
+#btn-grenade {
+    border-color: rgba(255, 165, 0, 0.5);
+    background: rgba(255, 165, 0, 0.1);
+}
+
+#btngrenade:active {
+    background: rgba(255, 165, 0, 0.2);
+}
+
+/* === RESPONSIVE ADJUSTMENTS === */
+
+/* Phone Portrait (ultra compact) */
+@media (max-width: 480px) and (orientation: portrait) {
+    #touch-controls {
+        height: 35vh;
+        /* Slightly taller on small phones */
+        padding: 2vmin;
+    }
+
+    #joystick-zone {
+        width: clamp(100px, 18vmin, 140px);
+        height: clamp(100px, 18vmin, 140px);
+    }
+}
+
+/* Tablet Landscape (more space available) */
+@media (min-width: 768px) and (max-width: 1024px) and (orientation: landscape) {
+    #touch-controls {
+        height: 25vh;
+        /* Less intrusive on wide screens */
+        padding: 3vmin 5vmin;
+    }
+}
+
+/* Phone Landscape (very compact) */
+@media (max-width: 812px) and (orientation: landscape) {
+    #touch-controls {
+        height: 40vh;
+        /* Take more space since height is limited */
+        flex-direction: row;
+        justify-content: space-between;
+    }
+
+    .left-controls,
+    #action-buttons {
+        align-self: flex-end;
+    }
 }
 
 /* Animations */
