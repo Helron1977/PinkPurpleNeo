@@ -67,7 +67,8 @@ const botCallbacks = {
 };
 
 // Game Loop
-// Physics at 60Hz
+// Physics at 50Hz (reduced from 60Hz for balanced gameplay)
+const PHYSICS_TICK_RATE = 50;
 setInterval(() => {
     for (const roomId in rooms) {
         const room = rooms[roomId];
@@ -75,7 +76,7 @@ setInterval(() => {
         // Vérifier si un bot doit être activé/désactivé
         botManager.checkRoom(room);
     }
-}, 1000 / 60);
+}, 1000 / PHYSICS_TICK_RATE);
 
 // Network Broadcast at 30Hz (saves bandwidth, sufficient for this game type)
 setInterval(() => {
