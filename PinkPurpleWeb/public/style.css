@@ -48,6 +48,7 @@ body {
     margin-bottom: 2rem;
     text-transform: uppercase;
     background: linear-gradient(to right, #bc13fe, #00f3ff);
+    background-clip: text;
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     text-shadow: 0 0 20px rgba(188, 19, 254, 0.5);
@@ -123,8 +124,16 @@ input[type="text"]:focus {
     width: 100%;
 }
 
-#join-btn {
+#room-code-input {
     flex: 1;
+    min-width: 0;
+    /* Allow flex shrinking */
+}
+
+#join-btn {
+    flex: 0 0 auto;
+    min-width: 120px;
+    /* Minimum width for button */
     border-color: var(--secondary-color);
 }
 

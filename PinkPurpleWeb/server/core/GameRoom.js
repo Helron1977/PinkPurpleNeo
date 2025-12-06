@@ -128,18 +128,39 @@ class GameRoom {
             // Priority check: did P1 hit P2?
             let p1HitP2 = false;
             if (p1.isHit && checkHit(p1, p2, dist, angleV1V2)) {
-                // CORRECTION ANGLE: Utiliser l'angle de la batte (basé sur facing) plutôt que l'angle direct
-                // La batte frappe dans la direction du facing, mais avec un angle vers le haut
-                // Calculer l'angle d'éjection basé sur la direction de la batte + position relative
-                const batAngle = p1.lastFacing === 1 ? 0 : Math.PI; // Direction horizontale de la batte
-                // Ajuster selon la position verticale de la victime
-                const verticalOffset = Math.atan2(dy, Math.abs(dx)); // Angle vertical relatif
-                // Combiner: direction de la batte + composante verticale
-                const ejectionAngle = batAngle + Math.max(-Math.PI / 3, Math.min(Math.PI / 3, verticalOffset * 0.5));
-                
-                p2.prepareEjection(ejectionAngle); // Prepare Launch avec angle corrigé
-                p1.enterVictoryStance(); // ATTACKER FLOATS
-                p1.isHit = false; // Consume hit
+                // IMPROVED EJECTION ANGLE CALCULATION
+                // L'animation de la batte fait un arc de cercle de bas en haut (facing right) 
+                // ou de haut en bas (facing left)
+                // L'angle d'éjection doit être perpendiculaire à la batte au moment de l'impact
+
+                const facing = p1.lastFacing; // 1 = right, -1 = left
+
+                // Position relative de la victime par rapport à l'attaquant
+                const relativeY = dy; // Positif si victime est en bas, négatif si en haut
+
+                // Calculer l'angle de la batte au moment de l'impact
+                // L'animation fait un arc: de -45° (repos) à +90° (impact) pour facing right
+                // Pour facing left, c'est l'inverse
+                let batSwingAngle;
+
+                if (facing === 1) {
+                    // Mouvement de gauche à droite: arc de bas en haut
+                    // Si victime en bas (relativeY > 0): batte à ~45° (bas-droite vers haut-droite)
+                    // Si victime en haut (relativeY < 0): batte à ~135° (haut-droite)
+                    batSwingAngle = Math.PI / 4 + (relativeY / dist) * (Math.PI / 3);
+                } else {
+                    // Mouvement de droite à gauche: arc de haut en bas
+                    // Si victime en haut (relativeY < 0): batte à ~45° (haut-gauche vers bas-gauche)
+                    // Si victime en bas (relativeY > 0): batte à ~-45° (bas-gauche)
+                    batSwingAngle = Math.PI - Math.PI / 4 - (relativeY / dist) * (Math.PI / 3);
+                }
+
+                // L'angle d'éjection est perpendiculaire à la batte (+ 90°)
+                const ejectionAngle = batSwingAngle;
+
+                p2.prepareEjection(ejectionAngle);
+                p1.enterVictoryStance();
+                p1.isHit = false;
 
                 // CRITICAL FIX: P2 is stunned, so they CANNOT attack P1 back in this frame
                 p2.isHit = false;
@@ -158,16 +179,29 @@ class GameRoom {
             if (!p1HitP2 && p2.isHit) {
                 const angleV2V1 = Math.atan2(-dy, -dx);
                 if (checkHit(p2, p1, dist, angleV2V1)) {
-                    // CORRECTION ANGLE: Utiliser l'angle de la batte (basé sur facing) plutôt que l'angle direct
-                    const batAngle = p2.lastFacing === 1 ? 0 : Math.PI; // Direction horizontale de la batte
-                    // Ajuster selon la position verticale de la victime
-                    const verticalOffset = Math.atan2(-dy, Math.abs(-dx)); // Angle vertical relatif
-                    // Combiner: direction de la batte + composante verticale
-                    const ejectionAngle = batAngle + Math.max(-Math.PI / 3, Math.min(Math.PI / 3, verticalOffset * 0.5));
-                    
-                    p1.prepareEjection(ejectionAngle); // Prepare Launch avec angle corrigé
-                    p2.enterVictoryStance(); // ATTACKER FLOATS
-                    p2.isHit = false; // Consume hit
+                    // IMPROVED EJECTION ANGLE CALCULATION (same logic as P1)
+                    const facing = p2.lastFacing; // 1 = right, -1 = left
+
+                    // Position relative de la victime par rapport à l'attaquant
+                    const relativeY = -dy; // Inverse car on regarde de P2 vers P1
+
+                    // Calculer l'angle de la batte au moment de l'impact
+                    let batSwingAngle;
+
+                    if (facing === 1) {
+                        // Mouvement de gauche à droite: arc de bas en haut
+                        batSwingAngle = Math.PI / 4 + (relativeY / dist) * (Math.PI / 3);
+                    } else {
+                        // Mouvement de droite à gauche: arc de haut en bas
+                        batSwingAngle = Math.PI - Math.PI / 4 - (relativeY / dist) * (Math.PI / 3);
+                    }
+
+                    // L'angle d'éjection est perpendiculaire à la batte
+                    const ejectionAngle = batSwingAngle;
+
+                    p1.prepareEjection(ejectionAngle);
+                    p2.enterVictoryStance();
+                    p2.isHit = false;
 
                     // CRITICAL FIX: P1 is stunned
                     p1.isHit = false;
