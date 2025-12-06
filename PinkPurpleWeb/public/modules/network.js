@@ -107,6 +107,7 @@ export class NetworkManager {
             const isHit = (flags & 2) !== 0;
             const grenadeCount = (flags >> 2) & 0x03;
             const facing = (flags & 16) ? 1 : -1;
+            const victoryStance = (flags & 32) !== 0; // Bit 5: VictoryStance
             const damage = data[offset++];
 
             // Read coordinates (Int16LE, scaled by 10)
@@ -126,6 +127,7 @@ export class NetworkManager {
                 isHit: isHit,
                 grenadeCount: grenadeCount,
                 facing: facing,
+                victoryStance: victoryStance,
                 color: playerId === 'p1' ? GAME_CONFIG.PLAYER1_COLOR : GAME_CONFIG.PLAYER2_COLOR
             };
         };

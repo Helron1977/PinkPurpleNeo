@@ -23,6 +23,7 @@ class BotAI {
         this.decisionInterval = null;
         this.lastState = null; // État précédent pour calculer les récompenses
         this.gameStartScore = null; // Score au début de la partie
+        this.victoryStanceStartTime = null; // Moment où le bot entre en victory stance
     }
 
     start() {
@@ -54,6 +55,29 @@ class BotAI {
         const enemy = me.isPlayer1 ? p2 : p1;
 
         if (!me || !enemy) return;
+
+        // CRITICAL: Ne pas prendre de décision si en victory stance
+        // Le bot doit rester immobile et doré après un hit réussi pendant 1 seconde
+        if (me.victoryStance) {
+            // Enregistrer le moment d'entrée en victory stance si pas déjà fait
+            if (this.victoryStanceStartTime === null) {
+                this.victoryStanceStartTime = now;
+            }
+            
+            // Attendre 1 seconde avant de reprendre les décisions
+            if (now - this.victoryStanceStartTime < 1000) {
+                return; // Rester en victory stance pendant 1 seconde
+            }
+            
+            // Après 1 seconde, sortir du victory stance et reprendre les décisions
+            // Simuler un input pour sortir du victory stance (comme un joueur humain)
+            me.victoryStance = false;
+            this.victoryStanceStartTime = null;
+            // Le bot peut maintenant reprendre ses décisions normalement
+        } else {
+            // Réinitialiser le timer si on n'est plus en victory stance
+            this.victoryStanceStartTime = null;
+        }
 
         // Initialiser le score de départ
         if (this.gameStartScore === null) {
@@ -401,6 +425,24 @@ class BotAI {
 
     executeAction(action) {
         if (!this.bot || !this.room) return;
+        
+        // CRITICAL: Ne pas exécuter d'action si en victory stance (sauf si 1 seconde écoulée)
+        // Le bot doit rester immobile et doré après un hit réussi pendant 1 seconde
+        if (this.bot.victoryStance) {
+            const now = Date.now();
+            if (this.victoryStanceStartTime === null) {
+                this.victoryStanceStartTime = now;
+            }
+            
+            // Attendre 1 seconde avant d'exécuter des actions
+            if (now - this.victoryStanceStartTime < 1000) {
+                return; // Rester en victory stance
+            }
+            
+            // Après 1 seconde, sortir du victory stance
+            this.bot.victoryStance = false;
+            this.victoryStanceStartTime = null;
+        }
 
         const result = this.bot.applyInput(action);
 
@@ -415,6 +457,16 @@ class BotAI {
      * Appelé quand un événement de jeu se produit (pour l'apprentissage)
      */
     onGameEvent(event) {
+        // Détecter quand le bot entre en victory stance (hit réussi)
+        if (event.type === 'hit') {
+            const me = this.bot;
+            const isAttacker = (event.from === 'p1' && me.isPlayer1) || (event.from === 'p2' && !me.isPlayer1);
+            if (isAttacker && me.victoryStance) {
+                // Le bot vient d'entrer en victory stance, enregistrer le temps
+                this.victoryStanceStartTime = Date.now();
+            }
+        }
+        
         if (!this.learning || !this.lastState) return;
 
         const me = this.bot;

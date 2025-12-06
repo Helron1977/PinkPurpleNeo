@@ -405,6 +405,12 @@ export class Renderer {
         ctx.translate(p.x, p.y);
 
         const anim = this.playerAnims[id];
+        
+        // Vérifier si le joueur est stunned (pour les yeux jaunes)
+        // IMPORTANT: Seule la VICTIME a les yeux en spirale (animation stunned)
+        // L'ATTAQUANT a l'animation bat_swing et victoryStance, PAS stunned
+        // On ne vérifie QUE l'animation stunned, pas isHit (car l'attaquant a aussi isHit=true temporairement)
+        const isStunned = (anim && anim.type === 'stunned');
 
         // COMIC HIT EFFECT (POW!) - Replaces victim body during impact freeze
         if (anim && (anim.type === 'deformation' || anim.type === 'stunned') && anim.isHit && this.hitStopTimer > 0) {
@@ -473,12 +479,16 @@ export class Renderer {
         // --- 2. NEON BODY ---
         const r = GAME_CONFIG.PLAYER_RADIUS;
 
+        // VICTORY STANCE: Change color to GOLD
+        const bodyColor = p.victoryStance ? '#ffd700' : p.color; // Or (#ffd700) en pose victoire
+        const glowColor = p.victoryStance ? '#ffd700' : p.color;
+
         // Disable shadow for Fill to prevent "Black Box" artifact
         ctx.shadowBlur = 0;
 
-        // Fill (Glassy)
-        ctx.fillStyle = p.color;
-        ctx.globalAlpha = 0.2; // Subtle glass fill
+        // Fill (Glassy) - Plus visible en or
+        ctx.fillStyle = bodyColor;
+        ctx.globalAlpha = p.victoryStance ? 0.4 : 0.2; // Plus opaque en or pour meilleure visibilité
         ctx.beginPath();
         ctx.arc(0, 0, r, 0, Math.PI * 2);
         ctx.fill();
@@ -489,14 +499,14 @@ export class Renderer {
         ctx.lineWidth = 3;
         // White core with colored glow gives best Neon effect
         ctx.strokeStyle = isGlitching ? '#ffffff' : '#ffffff';
-        ctx.shadowColor = p.color;
-        ctx.shadowBlur = 20; // Strong glow
+        ctx.shadowColor = glowColor;
+        ctx.shadowBlur = p.victoryStance ? 30 : 20; // Glow plus fort en or
         ctx.stroke();
 
-        // Overlay color stroke for definition
+        // Overlay color stroke for definition - Plus épais en or
         ctx.shadowBlur = 0;
-        ctx.strokeStyle = p.color;
-        ctx.lineWidth = 1;
+        ctx.strokeStyle = bodyColor;
+        ctx.lineWidth = p.victoryStance ? 2 : 1; // Ligne plus épaisse en or
         ctx.stroke();
 
         // --- 3. PROCEDURAL FACE (Eye Tracking) ---
@@ -547,9 +557,11 @@ export class Renderer {
 
             eyeScaleY = 0; // Cancel standard eyes
 
-        } else if (anim && anim.type === 'stunned') {
-            // Spiral Eyes (Spiral)
-            ctx.strokeStyle = '#fff';
+        } else if (isStunned) {
+            // Spiral Eyes (Spiral) - JAUNE pour TOUS les joueurs stunned
+            ctx.strokeStyle = '#ffff00'; // Jaune au lieu de blanc
+            ctx.shadowColor = '#ffff00';
+            ctx.shadowBlur = 10;
             ctx.lineWidth = 2;
             const time = Date.now() / 100;
 
@@ -577,6 +589,7 @@ export class Renderer {
                 else ctx.lineTo(x, y);
             }
             ctx.stroke();
+            ctx.shadowBlur = 0; // Reset shadow
 
             eyeScaleY = 0; // Cancel standard eyes
 
@@ -710,9 +723,9 @@ export class Renderer {
         ctx.lineTo(10, 5);
         ctx.fill();
 
-        // Hand circle on top of bat handle
-        ctx.fillStyle = p.color;
-        ctx.shadowColor = p.color;
+        // Hand circle on top of bat handle - Or en victory stance
+        ctx.fillStyle = p.victoryStance ? '#ffd700' : p.color;
+        ctx.shadowColor = p.victoryStance ? '#ffd700' : p.color;
         ctx.beginPath();
         ctx.arc(0, 0, 8, 0, Math.PI * 2);
         ctx.fill();

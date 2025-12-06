@@ -128,7 +128,16 @@ class GameRoom {
             // Priority check: did P1 hit P2?
             let p1HitP2 = false;
             if (p1.isHit && checkHit(p1, p2, dist, angleV1V2)) {
-                p2.prepareEjection(angleV1V2); // Prepare Launch
+                // CORRECTION ANGLE: Utiliser l'angle de la batte (basé sur facing) plutôt que l'angle direct
+                // La batte frappe dans la direction du facing, mais avec un angle vers le haut
+                // Calculer l'angle d'éjection basé sur la direction de la batte + position relative
+                const batAngle = p1.lastFacing === 1 ? 0 : Math.PI; // Direction horizontale de la batte
+                // Ajuster selon la position verticale de la victime
+                const verticalOffset = Math.atan2(dy, Math.abs(dx)); // Angle vertical relatif
+                // Combiner: direction de la batte + composante verticale
+                const ejectionAngle = batAngle + Math.max(-Math.PI / 3, Math.min(Math.PI / 3, verticalOffset * 0.5));
+                
+                p2.prepareEjection(ejectionAngle); // Prepare Launch avec angle corrigé
                 p1.enterVictoryStance(); // ATTACKER FLOATS
                 p1.isHit = false; // Consume hit
 
@@ -149,7 +158,14 @@ class GameRoom {
             if (!p1HitP2 && p2.isHit) {
                 const angleV2V1 = Math.atan2(-dy, -dx);
                 if (checkHit(p2, p1, dist, angleV2V1)) {
-                    p1.prepareEjection(angleV2V1); // Prepare Launch
+                    // CORRECTION ANGLE: Utiliser l'angle de la batte (basé sur facing) plutôt que l'angle direct
+                    const batAngle = p2.lastFacing === 1 ? 0 : Math.PI; // Direction horizontale de la batte
+                    // Ajuster selon la position verticale de la victime
+                    const verticalOffset = Math.atan2(-dy, Math.abs(-dx)); // Angle vertical relatif
+                    // Combiner: direction de la batte + composante verticale
+                    const ejectionAngle = batAngle + Math.max(-Math.PI / 3, Math.min(Math.PI / 3, verticalOffset * 0.5));
+                    
+                    p1.prepareEjection(ejectionAngle); // Prepare Launch avec angle corrigé
                     p2.enterVictoryStance(); // ATTACKER FLOATS
                     p2.isHit = false; // Consume hit
 
@@ -310,11 +326,12 @@ class GameRoom {
                 return;
             }
 
-            // Flags: Bit 0 (Active), Bit 1 (IsHit), Bits 2-3 (GrenadeCount)
+            // Flags: Bit 0 (Active), Bit 1 (IsHit), Bits 2-3 (GrenadeCount), Bit 4 (Facing), Bit 5 (VictoryStance)
             let flags = 1; // Active
             if (p.isHit) flags |= 2;
             flags |= (p.grenadeCount & 0x03) << 2; // 2 bits for grenades (0-3)
             if (p.lastFacing === 1) flags |= 16; // Bit 4: Facing (0=Left, 1=Right)
+            if (p.victoryStance) flags |= 32; // Bit 5: VictoryStance
 
             buf.writeUInt8(flags, offset++);
             buf.writeUInt8(p.damage, offset++);
