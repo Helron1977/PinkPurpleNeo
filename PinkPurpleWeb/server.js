@@ -67,8 +67,8 @@ const botCallbacks = {
 };
 
 // Game Loop
-// Physics at 50Hz (reduced from 60Hz for balanced gameplay)
-const PHYSICS_TICK_RATE = 50;
+// Physics at 60Hz (real-time simulation with corrected T_INC)
+const PHYSICS_TICK_RATE = 60;
 setInterval(() => {
     for (const roomId in rooms) {
         const room = rooms[roomId];
