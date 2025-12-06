@@ -99,6 +99,42 @@ export class Renderer {
         }
     }
 
+    triggerBounce(playerId) {
+        // Impact squash animation
+        this.playerAnims[playerId] = {
+            type: 'deformation', // Reuse deformation logic
+            startTime: Date.now(),
+            duration: 300, // Quick bounce squash 
+            seed: Math.random()
+        };
+        // Add a few particles
+        const state = this.network.getState();
+        const p = state.players[playerId];
+        if (p) {
+            for (let i = 0; i < 5; i++) {
+                this.particles.push({
+                    x: p.x, y: p.y,
+                    vx: (Math.random() - 0.5) * 10, vy: (Math.random() - 0.5) * 10,
+                    life: 0.5, color: '#fff', type: 'spark'
+                });
+            }
+        }
+    }
+
+    triggerSwing(attackerId) {
+        const state = this.network.getState();
+        const attacker = state.players[attackerId];
+        if (!attacker) return;
+
+        // Fast swing for misses (Real-time speed ~300ms)
+        this.playerAnims[attackerId] = {
+            type: 'bat_swing',
+            startTime: Date.now(),
+            duration: 300,
+            distinct: true
+        };
+    }
+
     triggerHitEffect(attackerId, victimId, damage) {
         const state = this.network.getState();
         const attacker = state.players[attackerId];
@@ -109,8 +145,8 @@ export class Renderer {
         // Cache frozen state for rendering during HitStop
         this.frozenPlayers = JSON.parse(JSON.stringify(state.players));
 
-        // 1. FREEZE FRAME (Arrêt sur image) - Balanced (0.6s)
-        this.hitStopDuration = 36; // 36 frames = 0.6s
+        // 1. FREEZE FRAME (Arrêt sur image) - Increased to 1.5s as requested
+        this.hitStopDuration = 90; // 90 frames = 1.5s
         this.hitStopTimer = this.hitStopDuration;
 
         // 2. ZOOM on Action
@@ -121,21 +157,22 @@ export class Renderer {
         this.cameraZoom = 2.0;
 
         // 3. Slow Motion setup (Matrix Style)
-        this.slowMotionFactor = 0.1; // 10% speed
+        this.slowMotionFactor = 0.05; // 5% speed (Very slow)
 
         // 4. ANIMATION DATA (Distinct Frames)
         this.playerAnims[attackerId] = {
             type: 'bat_swing',
             startTime: Date.now(),
-            duration: 2400,
+            duration: 4000,
             distinct: true
         };
 
         this.playerAnims[victimId] = {
-            type: 'deformation',
+            type: 'stunned',
             startTime: Date.now(),
-            duration: 2400,
-            seed: Math.random()
+            duration: 4000,
+            seed: Math.random(),
+            isHit: true
         };
 
         // 5. Particles
@@ -368,136 +405,321 @@ export class Renderer {
         ctx.translate(p.x, p.y);
 
         const anim = this.playerAnims[id];
-        let scaleX = 1, scaleY = 1;
-        let rotation = 0;
-        let isGlitching = false;
 
-        // --- VICTIM DEFORMATION ---
+        // COMIC HIT EFFECT (POW!) - Replaces victim body during impact freeze
+        if (anim && (anim.type === 'deformation' || anim.type === 'stunned') && anim.isHit && this.hitStopTimer > 0) {
+            ctx.fillStyle = '#ffffff'; // White blast
+            ctx.shadowBlur = 20;
+            ctx.shadowColor = '#ffff00'; // Yellow glow
+
+            // Draw Spiky Star
+            ctx.beginPath();
+            const spikes = 12;
+            const outer = 60;
+            const inner = 30;
+            for (let i = 0; i < spikes * 2; i++) {
+                const r = (i % 2 === 0) ? outer : inner;
+                const a = (Math.PI * i) / spikes;
+                ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+            }
+            ctx.closePath();
+            ctx.fill();
+
+            // Draw Text
+            ctx.shadowBlur = 0;
+            ctx.fillStyle = '#000';
+            ctx.font = 'bold 30px Arial';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('POW!', 0, 0);
+
+            ctx.restore();
+            return; // HIDE ADVERSARY
+        }
+
+        // --- 1. SQUASH & STRETCH (Velocity Based) ---
+        // Calculate velocity from trails if available, or fake it
+        let vx = 0, vy = 0;
+        if (this.trails[id] && this.trails[id].length > 1) {
+            const last = this.trails[id][this.trails[id].length - 1];
+            // Simple velocity estimate
+            vx = (p.x - last.x) * 5;
+            vy = (p.y - last.y) * 5;
+        }
+
+        let stretch = Math.min(Math.sqrt(vx * vx + vy * vy) * 0.02, 0.3);
+        let angle = Math.atan2(vy, vx);
+
+        // Hit Deformation Override
+        let isGlitching = false;
         if (anim && anim.type === 'deformation') {
             const elapsed = Date.now() - anim.startTime;
             if (elapsed < anim.duration) {
                 const progress = elapsed / anim.duration;
-                // Squash and stretch sinusoidal
-                const intensity = (1 - progress) * 1.0;
-                scaleX = 1 + Math.sin(progress * Math.PI * 10) * intensity * 0.5;
-                scaleY = 1 - Math.sin(progress * Math.PI * 10) * intensity * 0.5;
-
-                // Add jitter (Glitch)
-                if (Math.random() < 0.4 * intensity) {
-                    ctx.translate((Math.random() - 0.5) * 30, (Math.random() - 0.5) * 15);
-                    isGlitching = true;
-                }
+                const intensity = (1 - progress);
+                // Jelly wobble (Visible intensity)
+                stretch = Math.sin(progress * Math.PI * 10) * intensity * 0.25;
+                angle = Math.PI / 2; // Vertical squash
+                if (Math.random() < 0.2 * intensity) isGlitching = true;
             } else {
                 delete this.playerAnims[id];
             }
         }
 
-        // Apply transformations
-        ctx.rotate(rotation);
-        ctx.scale(scaleX, scaleY);
+        ctx.rotate(angle);
+        ctx.scale(1 + stretch, 1 - stretch);
+        ctx.rotate(-angle);
 
-        // Shadow/Glow
-        ctx.shadowBlur = 20;
-        ctx.shadowColor = p.color;
-
-        if (isGlitching) {
-            ctx.fillStyle = '#fff'; // Flash white on glitch
-            ctx.shadowColor = '#ff0000';
-        } else {
-            ctx.fillStyle = p.color;
-        }
-
-        // Draw Spherical Body
-        ctx.beginPath();
+        // --- 2. NEON BODY ---
         const r = GAME_CONFIG.PLAYER_RADIUS;
+
+        // Disable shadow for Fill to prevent "Black Box" artifact
+        ctx.shadowBlur = 0;
+
+        // Fill (Glassy)
+        ctx.fillStyle = p.color;
+        ctx.globalAlpha = 0.2; // Subtle glass fill
+        ctx.beginPath();
         ctx.arc(0, 0, r, 0, Math.PI * 2);
         ctx.fill();
 
-        // --- ATTACK ANIMATION (BAT) - DISTINCT FRAMES STYLE ---
+        ctx.globalAlpha = 1.0;
+
+        // Stroke (Neon Tube)
+        ctx.lineWidth = 3;
+        // White core with colored glow gives best Neon effect
+        ctx.strokeStyle = isGlitching ? '#ffffff' : '#ffffff';
+        ctx.shadowColor = p.color;
+        ctx.shadowBlur = 20; // Strong glow
+        ctx.stroke();
+
+        // Overlay color stroke for definition
+        ctx.shadowBlur = 0;
+        ctx.strokeStyle = p.color;
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        // --- 3. PROCEDURAL FACE (Eye Tracking) ---
+        const state = this.network.getState();
+        const opponentId = id === 'p1' ? 'p2' : 'p1';
+        const opponent = state.players && state.players[opponentId]; // Safe check
+
+        let lookX = 0, lookY = 0;
+        if (opponent) {
+            const dx = opponent.x - p.x;
+            const dy = opponent.y - p.y;
+            const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+            lookX = (dx / dist) * 10;
+            lookY = (dy / dist) * 10;
+        }
+
+        // Victory Laugh Shake
+        if (p.victoryStance) {
+            const shake = Math.sin(Date.now() / 50) * 3;
+            ctx.translate(0, shake);
+        }
+
+        // Eyes Group
+        ctx.save();
+        // Expression logic
+        let eyeScaleY = 1;
+        let eyeColor = '#fff';
+
+        if (p.victoryStance) {
+            // Happy Eyes (^ ^)
+            ctx.lineWidth = 3;
+            ctx.strokeStyle = '#fff';
+            ctx.shadowBlur = 5;
+
+            // Left Eye ^
+            ctx.beginPath();
+            ctx.moveTo(-20, -5);
+            ctx.lineTo(-15, -10);
+            ctx.lineTo(-10, -5);
+            ctx.stroke();
+
+            // Right Eye ^
+            ctx.beginPath();
+            ctx.moveTo(10, -5);
+            ctx.lineTo(15, -10);
+            ctx.lineTo(20, -5);
+            ctx.stroke();
+
+            eyeScaleY = 0; // Cancel standard eyes
+
+        } else if (anim && anim.type === 'stunned') {
+            // Spiral Eyes (Spiral)
+            ctx.strokeStyle = '#fff';
+            ctx.lineWidth = 2;
+            const time = Date.now() / 100;
+
+            // Left Spiral
+            ctx.beginPath();
+            for (let i = 0; i < 3.5; i += 0.2) {
+                const r = i * 2;
+                const a = i * 4 + time;
+                // Start from center
+                const x = -15 + Math.cos(a) * r;
+                const y = -5 + Math.sin(a) * r;
+                if (i === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            }
+            ctx.stroke();
+
+            // Right Spiral
+            ctx.beginPath();
+            for (let i = 0; i < 3.5; i += 0.2) {
+                const r = i * 2;
+                const a = i * 4 + time;
+                const x = 15 + Math.cos(a) * r;
+                const y = -5 + Math.sin(a) * r;
+                if (i === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            }
+            ctx.stroke();
+
+            eyeScaleY = 0; // Cancel standard eyes
+
+        } else if (anim && anim.type === 'bat_swing') {
+            // Angry eyes on attack
+            eyeScaleY = 0.5;
+            lookY += 5;
+        } else if (p.isHit) {
+            // Shocked/Dead eyes
+            eyeScaleY = 2.0;
+            lookX = (Math.random() - 0.5) * 10;
+            lookY = (Math.random() - 0.5) * 10;
+        }
+
+        // Standard Eyes Drawing
+        if (eyeScaleY > 0) {
+            ctx.fillStyle = '#fff';
+            ctx.shadowBlur = 10;
+            ctx.shadowColor = '#fff';
+
+            // Left Eye
+            ctx.beginPath();
+            ctx.ellipse(-15 + lookX * 0.3, -5 + lookY * 0.3, 6, 6 * eyeScaleY, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Right Eye
+            ctx.beginPath();
+            ctx.ellipse(15 + lookX * 0.3, -5 + lookY * 0.3, 6, 6 * eyeScaleY, 0, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        ctx.restore();
+
+
+        // --- 4. FLOATING HANDS ---
+        // Calculate hand positions
+        const facing = p.facing || 1;
+        const time = Date.now() / 200;
+
+        // Idle/float offset
+        const flY = Math.sin(time) * 5;
+
+        // Hand positions relative to body center
+        let h1x = 25 * facing, h1y = 10 + flY; // Weapon hand
+        let h2x = -20 * facing, h2y = 10 + flY; // Back hand
+
+        let batRotation = -Math.PI / 4 * facing; // Idle bat pos
+
+        // ANIMATION OVERRIDE
         if (anim && anim.type === 'bat_swing') {
             const elapsed = Date.now() - anim.startTime;
             if (elapsed < anim.duration) {
                 const progress = elapsed / anim.duration;
-                const facing = p.facing || 1;
-                let swingAngle = 0;
-
-                // 3 DISTINCT KEYFRAMES PUNCHY
+                // Reuse existing phases but map to hand position
                 if (progress < 0.3) {
-                    // Wind Up
+                    // Wind up
                     const t = progress / 0.3;
-                    swingAngle = -Math.PI / 1.5 * facing * t;
+                    h1x -= 20 * facing * t;
+                    h1y -= 10 * t;
+                    batRotation = (-Math.PI / 4 - Math.PI / 2 * t) * facing;
                 } else if (progress < 0.35) {
-                    // SMASH START
-                    swingAngle = 0;
-                    // Motion Smear
-                    ctx.save();
-                    ctx.rotate(swingAngle);
-                    ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
-                    ctx.beginPath();
-                    ctx.arc(0, 0, 120, -1.0, 0.5);
-                    ctx.fill();
-                    ctx.restore();
-                } else if (progress < 0.6) {
-                    // HOLD IMPACT
-                    swingAngle = Math.PI / 3 * facing;
+                    // SMASH
+                    h1x += 60 * facing;
+                    batRotation = Math.PI / 2 * facing;
 
-                    // Shockwave ring
+                    // Motion Swipe (Dynamic Crescent - Stroke Only)
                     ctx.save();
-                    ctx.strokeStyle = '#fff';
-                    ctx.lineWidth = 3;
+                    ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+                    ctx.lineWidth = 40; // Thick swipe
+                    ctx.lineCap = 'round';
                     ctx.beginPath();
-                    ctx.arc(40 * facing, 0, 50 + (progress - 0.35) * 150, 0, Math.PI * 2);
+
+                    if (facing === 1) {
+                        ctx.arc(0, 0, 70, -Math.PI / 2, Math.PI / 2, false);
+                    } else {
+                        ctx.arc(0, 0, 70, Math.PI + Math.PI / 2, Math.PI - Math.PI / 2, true);
+                    }
                     ctx.stroke();
                     ctx.restore();
 
-                    // Glitch Effect
-                    if (Math.random() > 0.5) ctx.fillStyle = '#fff';
+                } else if (progress < 0.6) {
+                    // HOLD
+                    h1x = 40 * facing;
+                    h1y = 0;
+                    batRotation = Math.PI / 2 * facing;
+                    // Shockwave
+                    ctx.save();
+                    ctx.strokeStyle = '#fff';
+                    ctx.lineWidth = 4;
+                    ctx.beginPath();
+                    ctx.arc(h1x, h1y, 50 + (progress - 0.35) * 200, 0, Math.PI * 2);
+                    ctx.stroke();
+                    ctx.restore();
                 } else {
-                    // Follow Through
-                    const t = (progress - 0.6) / 0.4;
-                    swingAngle = (Math.PI / 3 + Math.PI / 2 * t) * facing;
+                    // Recover
+                    h1x = 25 * facing;
+                    h1y = 10;
+                    batRotation = -Math.PI / 4 * facing;
                 }
-
-                // Draw Bat
-                ctx.save();
-                ctx.rotate(swingAngle);
-
-                // Handle
-                ctx.fillStyle = '#654321';
-                ctx.fillRect(15, -4, 20, 8);
-
-                // Barrel
-                ctx.fillStyle = '#ddd';
-                ctx.beginPath();
-                ctx.moveTo(35, -4);
-                ctx.lineTo(100, -10); // Tip Top
-                ctx.bezierCurveTo(110, -5, 110, 5, 100, 10); // Rounded Tip
-                ctx.lineTo(35, 4);
-                ctx.fill();
-
-                // Shine line
-                ctx.strokeStyle = '#fff';
-                ctx.lineWidth = 2;
-                ctx.beginPath();
-                ctx.moveTo(40, -2);
-                ctx.lineTo(90, -4);
-                ctx.stroke();
-
-                ctx.restore();
-
             } else {
                 delete this.playerAnims[id];
             }
         }
 
-        // Regular isHit overlay
-        if (p.isHit && !isGlitching) {
-            ctx.strokeStyle = COLORS.WHITE;
-            ctx.lineWidth = 3;
-            ctx.stroke();
-        }
+        // Draw Hands
+        ctx.fillStyle = p.color; // Solid neon color
+        ctx.shadowBlur = 15;
 
-        ctx.restore();
+        // Back Hand
+        ctx.beginPath();
+        ctx.arc(h2x, h2y, 8, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Front Hand (Weapon Hand)
+        ctx.save();
+        ctx.translate(h1x, h1y);
+        ctx.rotate(batRotation);
+
+        // BAT
+        ctx.fillStyle = '#eee'; // White-ish neon bat
+        ctx.shadowColor = '#fff';
+        ctx.shadowBlur = 20;
+
+        // Handle
+        ctx.fillRect(-2, -5, 15, 6); // Hand grip area
+        // Bat body
+        ctx.beginPath();
+        ctx.moveTo(10, -5);
+        ctx.lineTo(80, -10);
+        ctx.quadraticCurveTo(90, -5, 90, 0); // Tip rounded
+        ctx.quadraticCurveTo(90, 5, 80, 10);
+        ctx.lineTo(10, 5);
+        ctx.fill();
+
+        // Hand circle on top of bat handle
+        ctx.fillStyle = p.color;
+        ctx.shadowColor = p.color;
+        ctx.beginPath();
+        ctx.arc(0, 0, 8, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.restore(); // End Hand/Bat transform
+
+        ctx.restore(); // End Player transform
     }
 
     drawGrenades(grenades) {

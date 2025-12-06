@@ -12,6 +12,7 @@ class GameRoom {
         this.obstacles = [];
         this.grenades = []; // Active grenades
         this.lastBroadcastState = null; // For delta compression
+        this.globalHitStop = 0; // Global freeze timer
         this.generateObstacles();
     }
 
@@ -56,6 +57,16 @@ class GameRoom {
     }
 
     updatePhysics() {
+        if (this.globalHitStop > 0) {
+            this.globalHitStop--;
+            // On the last freeze frame, apply pending launches so they move next frame
+            if (this.globalHitStop === 0) {
+                if (this.players['p1']) this.players['p1'].applyPendingLaunch();
+                if (this.players['p2']) this.players['p2'].applyPendingLaunch();
+            }
+            return;
+        }
+
         const p1 = this.players['p1'];
         const p2 = this.players['p2'];
 
@@ -95,22 +106,64 @@ class GameRoom {
             const dist = Math.sqrt(dx * dx + dy * dy);
             const angleV1V2 = Math.atan2(dy, dx);
 
-            if (p1.isHit && dist < 2 * R_MAX) {
-                p2.getEjected(angleV1V2);
-                p1.isHit = false;
+            // Geometric Hit Detection
+            const checkHit = (attacker, victim, dist, angleAttackToVictim) => {
+                // 1. Range Check: Player Radius (25) + Bat Reach (~100) = 125
+                if (dist > 140) return false; // Generous reach
+
+                // 2. Angle Check (Cone)
+                // Attacker Facing: 0 (Right) or PI (Left)
+                const facingAngle = attacker.lastFacing === 1 ? 0 : Math.PI;
+
+                // Angle Difference
+                let diff = angleAttackToVictim - facingAngle;
+                // Normalize to [-PI, PI]
+                while (diff > Math.PI) diff -= Math.PI * 2;
+                while (diff < -Math.PI) diff += Math.PI * 2;
+
+                // Cone width: +/- 60 degrees (~1.0 radian)
+                return Math.abs(diff) < 1.2;
+            };
+
+            // Priority check: did P1 hit P2?
+            let p1HitP2 = false;
+            if (p1.isHit && checkHit(p1, p2, dist, angleV1V2)) {
+                p2.prepareEjection(angleV1V2); // Prepare Launch
+                p1.enterVictoryStance(); // ATTACKER FLOATS
+                p1.isHit = false; // Consume hit
+
+                // CRITICAL FIX: P2 is stunned, so they CANNOT attack P1 back in this frame
+                p2.isHit = false;
+                p2.activeHitboxTimer = 0;
+
+                // GLOBAL FREEZE ON HIT
+                this.globalHitStop = 30;
+
                 const hitEvent = { type: 'hit', from: 'p1', to: 'p2', damage: p2.damage };
                 this.io.to(this.id).emit('event', hitEvent);
-                // Notifier les bots pour l'apprentissage
                 this.botCallbacks.onEvent(this.id, hitEvent);
+                p1HitP2 = true;
             }
 
-            if (p2.isHit && dist < 2 * R_MAX) {
-                p1.getEjected(angleV1V2 + Math.PI);
-                p2.isHit = false;
-                const hitEvent = { type: 'hit', from: 'p2', to: 'p1', damage: p1.damage };
-                this.io.to(this.id).emit('event', hitEvent);
-                // Notifier les bots pour l'apprentissage
-                this.botCallbacks.onEvent(this.id, hitEvent);
+            // Only check P2 attack if P2 wasn't just stunned
+            if (!p1HitP2 && p2.isHit) {
+                const angleV2V1 = Math.atan2(-dy, -dx);
+                if (checkHit(p2, p1, dist, angleV2V1)) {
+                    p1.prepareEjection(angleV2V1); // Prepare Launch
+                    p2.enterVictoryStance(); // ATTACKER FLOATS
+                    p2.isHit = false; // Consume hit
+
+                    // CRITICAL FIX: P1 is stunned
+                    p1.isHit = false;
+                    p1.activeHitboxTimer = 0;
+
+                    // GLOBAL FREEZE ON HIT
+                    this.globalHitStop = 30;
+
+                    const hitEvent = { type: 'hit', from: 'p2', to: 'p1', damage: p1.damage };
+                    this.io.to(this.id).emit('event', hitEvent);
+                    this.botCallbacks.onEvent(this.id, hitEvent);
+                }
             }
         }
 
@@ -165,7 +218,8 @@ class GameRoom {
 
                     if (dist1 < BLAST_RADIUS) {
                         const angle1 = Math.atan2(dy1, dx1);
-                        p1.getEjected(angle1);
+                        p1.prepareEjection(angle1); // Use new method
+                        this.globalHitStop = 30; // FREEZE ON EXPLOSION
                         const grenadeHitEvent = {
                             type: 'grenade_hit',
                             target: 'p1',
@@ -183,12 +237,15 @@ class GameRoom {
 
                     if (dist2 < BLAST_RADIUS) {
                         const angle2 = Math.atan2(dy2, dx2);
-                        p2.getEjected(angle2);
-                        this.io.to(this.id).emit('event', {
+                        p2.prepareEjection(angle2); // Use new method
+                        this.globalHitStop = 30; // FREEZE ON EXPLOSION
+                        const grenadeHitEvent = {
                             type: 'grenade_hit',
                             target: 'p2',
                             damage: p2.damage
-                        });
+                        };
+                        this.io.to(this.id).emit('event', grenadeHitEvent);
+                        this.botCallbacks.onEvent(this.id, grenadeHitEvent);
                     }
                 }
 

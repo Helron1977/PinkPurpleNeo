@@ -134,15 +134,17 @@ network.on('game_event', (event) => {
                 renderer.createExplosion(players[event.to].x, players[event.to].y, players[event.from].color);
                 renderer.addFloatingDamage(players[event.to].x, players[event.to].y, event.damage || 10, '#ff0000');
 
-                // TRIGGER ARCADE ANIMATION
-                // We need IDs. 'event.from' is 'p1'/'p2'
-                const attackerId = players[event.from].isPlayer1 ? 'p1' : 'p2'; // Actually network uses p1 key
-                // players keys are 'p1' and 'p2'.
-
                 renderer.triggerHitEffect(event.from, event.to, event.damage);
 
                 ui.flashScreen();
                 soundManager.playHit();
+            }
+            break;
+
+        case 'swing':
+            if (players[event.player]) {
+                renderer.triggerSwing(event.player);
+                // soundManager.playNoise(0.1, 1.0); // Gentle whoosh
             }
             break;
 
@@ -157,6 +159,10 @@ network.on('game_event', (event) => {
 
         case 'bounce':
             soundManager.playBounce();
+            // Trigger visual squash
+            if (players[event.player]) {
+                renderer.triggerBounce(event.player);
+            }
             break;
 
         case 'grenade_explode':
