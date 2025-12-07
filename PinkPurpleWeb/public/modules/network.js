@@ -91,6 +91,11 @@ export class NetworkManager {
             this.playerNames = names;
             this.emit('update_names', names);
         });
+
+        // Ragdoll activation event
+        this.socket.on('ragdoll_start', (data) => {
+            this.emit('ragdoll_start', data);
+        });
     }
 
     // Decode binary state protocol
@@ -120,13 +125,13 @@ export class NetworkManager {
             const victoryStance = (flags & 32) !== 0; // Bit 5: VictoryStance
             const damage = data[offset++];
 
-            // Read coordinates (Int16LE, scaled by 10)
+            // Read coordinates (Int16LE, scaled by 10) - EXACTEMENT comme l'ancien code
             const x = ((data[offset + 1] << 8) | data[offset]) / 10;
             offset += 2;
             const y = ((data[offset + 1] << 8) | data[offset]) / 10;
             offset += 2;
 
-            // Convert to signed
+            // Convert to signed if needed
             const xSigned = x > 32767 / 10 ? x - 65536 / 10 : x;
             const ySigned = y > 32767 / 10 ? y - 65536 / 10 : y;
 

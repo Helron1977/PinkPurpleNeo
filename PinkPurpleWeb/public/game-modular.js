@@ -134,7 +134,7 @@ network.on('game_event', (event) => {
                 renderer.createExplosion(players[event.to].x, players[event.to].y, players[event.from].color);
                 renderer.addFloatingDamage(players[event.to].x, players[event.to].y, event.damage || 10, '#ff0000');
 
-                renderer.triggerHitEffect(event.from, event.to, event.damage);
+                renderer.triggerHitEffect(event.from, event.to, event.damage, event.ejectionAngle || 0, event.hitOffsetX || 0);
 
                 ui.flashScreen();
                 soundManager.playHit();
@@ -143,7 +143,7 @@ network.on('game_event', (event) => {
 
         case 'swing':
             if (players[event.player]) {
-                renderer.triggerSwing(event.player);
+                renderer.triggerSwing(event.player, event.direction || 'horizontal');
                 // soundManager.playNoise(0.1, 1.0); // Gentle whoosh
             }
             break;
@@ -184,6 +184,16 @@ network.on('game_event', (event) => {
 network.on('game_over', (data) => {
     soundManager.playWin();
     ui.showGameOver(data.winner);
+});
+
+// Animation triggers
+network.on('ragdoll_start', (data) => {
+    // Legacy event mapped to new system
+    // data: { playerId, impactAngle, force... }
+    // On peut mapper ça sur "stunned" ou "bounce" selon le contexte, 
+    // ou laisser le serveur envoyer les bons événements.
+    // Pour l'instant, on ignore ou on log.
+    // console.log("Legacy ragdoll event received", data);
 });
 
 // Setup input handlers

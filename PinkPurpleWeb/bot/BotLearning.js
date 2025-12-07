@@ -249,6 +249,22 @@ class BotLearning {
     /**
      * Charge les connaissances précédentes
      */
+    /**
+     * Réinitialise la connaissance du bot (pour nouvelle carte)
+     */
+    resetKnowledge() {
+        this.qTable = new Map(); // IMPORTANT: Map, pas objet !
+        this.stats = {
+            gamesPlayed: 0,
+            wins: 0,
+            losses: 0,
+            totalReward: 0
+        };
+        // Sauvegarder le reset
+        this.saveKnowledge();
+        console.log('[BotLearning] Connaissance réinitialisée');
+    }
+
     loadKnowledge() {
         try {
             const knowledgePath = path.join(__dirname, '..', 'data', 'bot_knowledge.json');

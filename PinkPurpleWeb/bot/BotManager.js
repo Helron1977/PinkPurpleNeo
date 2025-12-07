@@ -64,6 +64,12 @@ class BotManager {
 
         if (!botSlot) return; // Pas de slot libre
 
+        // Si la carte est fixe symétrique, reset la mémoire du bot pour qu'il réapprenne
+        if (room.mapMode === 'fixed_symmetric') {
+            this.learningSystem.resetKnowledge();
+            console.log('[BotManager] Mémoire du bot réinitialisée pour carte fixe');
+        }
+
         // Créer le bot (utiliser la classe Player normale avec un ID spécial)
         if (!this.PlayerClass) {
             console.error('[BotManager] Player class not found');

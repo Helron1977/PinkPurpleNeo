@@ -1,6 +1,7 @@
 const { WIDTH, HEIGHT, R_MAX } = require('../constants');
 const Player = require('../entities/Player');
 const Grenade = require('../entities/Grenade');
+const config = require('../config');
 
 class GameRoom {
     constructor(id, io, botCallbacks) {
@@ -13,19 +14,67 @@ class GameRoom {
         this.grenades = []; // Active grenades
         this.lastBroadcastState = null; // For delta compression
         this.globalHitStop = 0; // Global freeze timer
+        this.mapMode = config.MAP_GENERATION_MODE;
         this.generateObstacles();
     }
 
     generateObstacles() {
         this.obstacles = [];
-        for (let i = 0; i < 15; i++) {
-            this.obstacles.push({
-                x: Math.random() * (WIDTH - 200) + 100,
-                y: Math.random() * (HEIGHT - 200) + 100,
-                w: 50 + Math.random() * 100,
-                h: 100 + Math.random() * 200,
-            });
+        
+        if (this.mapMode === 'fixed_symmetric') {
+            // Carte fixe symétrique (pour le bot)
+            const fixedObstacles = [
+                { x: 500, y: 200, w: 80, h: 150 },
+                { x: 500, y: 730, w: 80, h: 150 },
+                { x: 800, y: 400, w: 100, h: 200 },
+                { x: 1100, y: 200, w: 80, h: 150 },
+                { x: 1100, y: 730, w: 80, h: 150 },
+                { x: 1400, y: 400, w: 100, h: 200 },
+            ];
+            
+            // Dupliquer symétriquement
+            for (const obs of fixedObstacles) {
+                this.obstacles.push(obs);
+                // Symétrie horizontale
+                this.obstacles.push({
+                    x: WIDTH - obs.x - obs.w,
+                    y: obs.y,
+                    w: obs.w,
+                    h: obs.h
+                });
+            }
+        } else if (this.mapMode === 'symmetric') {
+            // Carte symétrique aléatoire
+            const numObstacles = 7;
+            for (let i = 0; i < numObstacles; i++) {
+                const x = Math.random() * (WIDTH / 2 - 200) + 100;
+                const y = Math.random() * (HEIGHT - 200) + 100;
+                const w = 50 + Math.random() * 100;
+                const h = 100 + Math.random() * 200;
+                
+                // Ajouter obstacle côté gauche
+                this.obstacles.push({ x, y, w, h });
+                // Ajouter symétrique côté droit
+                this.obstacles.push({
+                    x: WIDTH - x - w,
+                    y: y,
+                    w: w,
+                    h: h
+                });
+            }
+        } else {
+            // Mode aléatoire (original)
+            for (let i = 0; i < 15; i++) {
+                this.obstacles.push({
+                    x: Math.random() * (WIDTH - 200) + 100,
+                    y: Math.random() * (HEIGHT - 200) + 100,
+                    w: 50 + Math.random() * 100,
+                    h: 100 + Math.random() * 200,
+                });
+            }
         }
+        
+        // Filtrer pour éviter les zones de spawn
         this.obstacles = this.obstacles.filter(o => {
             const p1Safe = (o.x + o.w < 50 || o.x > 250 || o.y + o.h < 150 || o.y > 350);
             const p2Safe = (o.x + o.w < 1750 || o.x > 1950 || o.y + o.h < 150 || o.y > 350);
@@ -85,10 +134,11 @@ class GameRoom {
             if (p1Status.dead) {
                 this.scores.p2++;
                 p1.reset();
+                // Respawn invincibility / floating (géré dans Player.js idéalement, ou ici)
+                // Ici on signale juste la mort
                 this.io.to(this.id).emit('score', this.scores);
                 const deathEvent = { type: 'death', player: 'p1' };
                 this.io.to(this.id).emit('event', deathEvent);
-                // Notifier les bots pour l'apprentissage
                 this.botCallbacks.onEvent(this.id, deathEvent);
             }
             if (p2Status.dead) {
@@ -97,7 +147,6 @@ class GameRoom {
                 this.io.to(this.id).emit('score', this.scores);
                 const deathEvent = { type: 'death', player: 'p2' };
                 this.io.to(this.id).emit('event', deathEvent);
-                // Notifier les bots pour l'apprentissage
                 this.botCallbacks.onEvent(this.id, deathEvent);
             }
 
@@ -128,50 +177,59 @@ class GameRoom {
             // Priority check: did P1 hit P2?
             let p1HitP2 = false;
             if (p1.isHit && checkHit(p1, p2, dist, angleV1V2)) {
-                // IMPROVED EJECTION ANGLE CALCULATION
-                // L'animation de la batte fait un arc de cercle de bas en haut (facing right) 
-                // ou de haut en bas (facing left)
-                // L'angle d'éjection doit être perpendiculaire à la batte au moment de l'impact
+                // --- CALCUL PRÉCIS DE L'ANGLE D'ÉJECTION ---
+                
+                // Vecteur Attack -> Victim
+                // dx, dy sont déjà calculés (p2 - p1)
+                
+                // Position relative de la batte au moment de l'impact
+                // On assume que l'impact se produit "devant" le joueur dans la direction de son swing
+                // Si facing Right (1), swing de bas en haut : Impact à ~45°
+                const facing = p1.lastFacing; 
+                let batAngleImpact = (facing === 1) ? Math.PI/4 : 3*Math.PI/4;
+                
+                // Ajustement fin basé sur la hauteur relative (dy)
+                // Si victime plus haut (dy < 0), on a frappé plus tard dans l'arc (plus haut)
+                // dist est la distance entre les centres (~50px contact)
+                const heightFactor = Math.max(-1, Math.min(1, dy / 60)); // Normalisé -1 à 1
+                batAngleImpact -= heightFactor * (Math.PI / 4) * facing;
 
-                const facing = p1.lastFacing; // 1 = right, -1 = left
+                // L'éjection est PERPENDICULAIRE à la batte
+                // Si batte monte (/), force vers haut-gauche ou haut-droite
+                // Tangente de l'arc + 90°
+                const ejectionAngle = batAngleImpact - (Math.PI / 2 * facing);
 
-                // Position relative de la victime par rapport à l'attaquant
-                const relativeY = dy; // Positif si victime est en bas, négatif si en haut
-
-                // Calculer l'angle de la batte au moment de l'impact
-                // L'animation fait un arc: de -45° (repos) à +90° (impact) pour facing right
-                // Pour facing left, c'est l'inverse
-                let batSwingAngle;
-
-                if (facing === 1) {
-                    // Mouvement de gauche à droite: arc de bas en haut
-                    // Si victime en bas (relativeY > 0): batte à ~45° (bas-droite vers haut-droite)
-                    // Si victime en haut (relativeY < 0): batte à ~135° (haut-droite)
-                    batSwingAngle = Math.PI / 4 + (relativeY / dist) * (Math.PI / 3);
-                } else {
-                    // Mouvement de droite à gauche: arc de haut en bas
-                    // Si victime en haut (relativeY < 0): batte à ~45° (haut-gauche vers bas-gauche)
-                    // Si victime en bas (relativeY > 0): batte à ~-45° (bas-gauche)
-                    batSwingAngle = Math.PI - Math.PI / 4 - (relativeY / dist) * (Math.PI / 3);
-                }
-
-                // L'angle d'éjection est perpendiculaire à la batte (+ 90°)
-                const ejectionAngle = batSwingAngle;
+                // --- GLANCING HIT (Coup effleuré) ---
+                // Si l'angle d'éjection est très différent de l'angle entre les joueurs, c'est un coup "mal centré"
+                // Angle P1 -> P2
+                const angleCenters = Math.atan2(dy, dx);
+                let angleDiff = Math.abs(ejectionAngle - angleCenters);
+                if (angleDiff > Math.PI) angleDiff = 2*Math.PI - angleDiff;
+                
+                const isGlancing = angleDiff > 0.5; // ~30 degrés de différence
 
                 p2.prepareEjection(ejectionAngle);
                 p1.enterVictoryStance();
+                
+                // Reset flags
                 p1.isHit = false;
-
-                // CRITICAL FIX: P2 is stunned, so they CANNOT attack P1 back in this frame
                 p2.isHit = false;
                 p2.activeHitboxTimer = 0;
 
-                // GLOBAL FREEZE ON HIT
                 this.globalHitStop = 30;
 
-                const hitEvent = { type: 'hit', from: 'p1', to: 'p2', damage: p2.damage };
+                const hitEvent = { 
+                    type: 'hit', 
+                    from: 'p1', 
+                    to: 'p2', 
+                    damage: p2.damage,
+                    isGlancing: isGlancing,
+                    angle: ejectionAngle
+                };
+                
                 this.io.to(this.id).emit('event', hitEvent);
                 this.botCallbacks.onEvent(this.id, hitEvent);
+                
                 p1HitP2 = true;
             }
 
@@ -179,40 +237,42 @@ class GameRoom {
             if (!p1HitP2 && p2.isHit) {
                 const angleV2V1 = Math.atan2(-dy, -dx);
                 if (checkHit(p2, p1, dist, angleV2V1)) {
-                    // IMPROVED EJECTION ANGLE CALCULATION (same logic as P1)
-                    const facing = p2.lastFacing; // 1 = right, -1 = left
+                // --- CALCUL PRÉCIS DE L'ANGLE D'ÉJECTION (P2 -> P1) ---
+                const facing = p2.lastFacing;
+                let batAngleImpact = (facing === 1) ? Math.PI/4 : 3*Math.PI/4;
+                
+                // relativeY est inversé pour P2 (il tape "vers" P1)
+                const heightFactor = Math.max(-1, Math.min(1, -dy / 60));
+                batAngleImpact -= heightFactor * (Math.PI / 4) * facing;
 
-                    // Position relative de la victime par rapport à l'attaquant
-                    const relativeY = -dy; // Inverse car on regarde de P2 vers P1
+                const ejectionAngle = batAngleImpact - (Math.PI / 2 * facing);
 
-                    // Calculer l'angle de la batte au moment de l'impact
-                    let batSwingAngle;
+                // --- GLANCING HIT ---
+                const angleCenters = Math.atan2(-dy, -dx); // P2 vers P1
+                let angleDiff = Math.abs(ejectionAngle - angleCenters);
+                if (angleDiff > Math.PI) angleDiff = 2*Math.PI - angleDiff;
+                const isGlancing = angleDiff > 0.5;
 
-                    if (facing === 1) {
-                        // Mouvement de gauche à droite: arc de bas en haut
-                        batSwingAngle = Math.PI / 4 + (relativeY / dist) * (Math.PI / 3);
-                    } else {
-                        // Mouvement de droite à gauche: arc de haut en bas
-                        batSwingAngle = Math.PI - Math.PI / 4 - (relativeY / dist) * (Math.PI / 3);
-                    }
+                p1.prepareEjection(ejectionAngle);
+                p2.enterVictoryStance();
+                
+                p2.isHit = false;
+                p1.isHit = false;
+                p1.activeHitboxTimer = 0;
 
-                    // L'angle d'éjection est perpendiculaire à la batte
-                    const ejectionAngle = batSwingAngle;
+                this.globalHitStop = 30;
 
-                    p1.prepareEjection(ejectionAngle);
-                    p2.enterVictoryStance();
-                    p2.isHit = false;
-
-                    // CRITICAL FIX: P1 is stunned
-                    p1.isHit = false;
-                    p1.activeHitboxTimer = 0;
-
-                    // GLOBAL FREEZE ON HIT
-                    this.globalHitStop = 30;
-
-                    const hitEvent = { type: 'hit', from: 'p2', to: 'p1', damage: p1.damage };
-                    this.io.to(this.id).emit('event', hitEvent);
-                    this.botCallbacks.onEvent(this.id, hitEvent);
+                const hitEvent = { 
+                    type: 'hit', 
+                    from: 'p2', 
+                    to: 'p1', 
+                    damage: p1.damage,
+                    isGlancing: isGlancing,
+                    angle: ejectionAngle
+                };
+                
+                this.io.to(this.id).emit('event', hitEvent);
+                this.botCallbacks.onEvent(this.id, hitEvent);
                 }
             }
         }

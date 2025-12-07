@@ -142,11 +142,15 @@ io.on('connection', (socket) => {
         if (roomId && rooms[roomId]) {
             const player = rooms[roomId].players[rooms[roomId].players['p1']?.id === socket.id ? 'p1' : 'p2'];
             if (player) {
-                const result = player.applyInput(key);
-                if (result === 'attack') {
-                    // Emit swing event for visual animation (even on miss)
-                    io.to(roomId).emit('event', { type: 'swing', player: player.isPlayer1 ? 'p1' : 'p2' });
-                } else if (result && result.type === 'grenade') {
+            const result = player.applyInput(key);
+            if (result && result.type === 'attack') {
+                // Emit swing event for visual animation (even on miss) avec direction
+                io.to(roomId).emit('event', { 
+                    type: 'swing', 
+                    player: player.isPlayer1 ? 'p1' : 'p2',
+                    direction: result.direction || 'horizontal'
+                });
+            } else if (result && result.type === 'grenade') {
                     // Create grenade
                     const grenade = new Grenade(result.x, result.y, result.vx, result.vy, player.id);
                     rooms[roomId].grenades.push(grenade);

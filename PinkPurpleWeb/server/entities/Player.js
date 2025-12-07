@@ -13,6 +13,7 @@ class Player {
         this.slamActiveTimer = 0;
         this.moveCooldown = 0;
         this.grenadeCount = 3;
+        this.lastAction = null; // Dernière action pour détecter attaque vers le haut
         this.reset();
     }
 
@@ -24,27 +25,48 @@ class Player {
         this.pendingLaunch = null;
         this.victoryStance = false; // Add victoryStance init
         this.grenadeCount = 3;
+        this.dashCooldown = 0;
+        this.grenadeCooldown = 0;
+        
+        // INITIAL POSITIONS
         if (this.isPlayer1) {
             this.x = 100;
             this.y = 200;
-            this.startX = 100;
-            this.startY = 200;
-            this.velocity = 0;
-            this.angle = Math.PI / 2;
         } else {
-            this.x = 1820;
+            this.x = WIDTH - 100;
             this.y = 200;
-            this.startX = 1820;
-            this.startY = 1200;
-            this.velocity = 0;
-            this.angle = Math.PI / 2;
         }
+        this.startX = this.x;
+        this.startY = this.y;
+        this.velocity = 0;
+        this.angle = 0;
         this.t = 0;
-        this.isHit = false;
-        this.lastFacing = 1;
+        this.lastFacing = this.isPlayer1 ? 1 : -1;
+        
+        // RESPAWN MECHANIC: Waiting state
+        this.isRespawning = true;
+        this.respawnTimer = 180; // 3 seconds @ 60fps
     }
 
     update(obstacles) {
+        // RESPAWN LOGIC
+        if (this.isRespawning) {
+            this.respawnTimer--;
+            this.velocity = 0; // Float
+            
+            // Check for ANY input to break respawn
+            const input = this.inputs; // Assuming inputs are stored here
+            if (input && (input.up || input.left || input.right || input.down || input.space || input.shift || input.attack)) {
+                this.isRespawning = false;
+            }
+            
+            if (this.respawnTimer <= 0) {
+                this.isRespawning = false;
+            }
+            // Force floating position
+            return { bounced: false, dead: false };
+        }
+
         // VICTORY STANCE: Attacker floats until input
         if (this.victoryStance) {
             this.velocity = 0;
@@ -178,12 +200,14 @@ class Player {
     }
 
     applyInput(key) {
-        // WAKE UP from Victory Stance on any input (except pure modifiers if any)
-        // If movement key is pressed, we clear stance and process input
-        if (this.victoryStance) {
+        // Break Respawn / Victory on input
+        if (this.isRespawning || this.victoryStance) {
+            // key is expected to be a string like 'LEFT', 'RIGHT', etc.
             if (['LEFT', 'RIGHT', 'UP', 'DOWN', 'SLAM', 'DASH', 'HIT', 'GRENADE'].includes(key)) {
+                this.isRespawning = false;
                 this.victoryStance = false;
             }
+            if (this.isRespawning) return; // Don't move while respawning
         }
 
         // 1. GLOBAL STUN CHECK
@@ -195,7 +219,16 @@ class Player {
             this.isHit = true;
             this.activeHitboxTimer = 10;
             this.attackCooldown = 30;
-            return 'attack';
+            // Si dernière action était UP, attaque vers le haut
+            const attackDirection = (this.lastAction === 'UP') ? 'up' : 'horizontal';
+            // Mettre à jour facing selon la direction de l'attaque
+            if (attackDirection === 'horizontal') {
+                // Conserver le facing actuel pour attaque horizontale
+            } else {
+                // Pour attaque vers le haut, on garde le facing actuel aussi
+            }
+            this.lastAction = 'HIT';
+            return { type: 'attack', direction: attackDirection };
         }
 
         if (key === 'GRENADE') {
@@ -240,12 +273,17 @@ class Player {
         if (key === 'LEFT') {
             this.angle = Math.PI / 3;
             this.lastFacing = -1;
+            this.lastAction = 'LEFT';
         }
         else if (key === 'RIGHT') {
             this.angle = 2 * Math.PI / 3;
             this.lastFacing = 1;
+            this.lastAction = 'RIGHT';
         }
-        else if (key === 'UP') this.angle = Math.PI / 2;
+        else if (key === 'UP') {
+            this.angle = Math.PI / 2;
+            this.lastAction = 'UP';
+        }
         else if (key === 'DOWN') {
             this.angle = -Math.PI / 2;
             this.velocity = -50;
@@ -258,7 +296,8 @@ class Player {
         this.activeHitboxTimer = 0;
 
         this.damage += 10;
-        const force = 25 + (this.damage * 1.2);
+        // ÉJECTION PLUS VIOLENTE : force augmentée de 50%
+        const force = (25 + (this.damage * 1.2)) * 1.5;
 
         let vy = Math.sin(angleFromAttacker);
         let vx = Math.cos(angleFromAttacker);

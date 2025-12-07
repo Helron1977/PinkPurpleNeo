@@ -4,6 +4,7 @@
  */
 
 import { GAME_CONFIG, COLORS } from './constants.js';
+import { AnimationSystem } from './animations/AnimationSystem.js';
 
 export class Renderer {
     constructor(canvas, networkManager) {
@@ -21,8 +22,8 @@ export class Renderer {
         // Hit Impact & Animation
         this.hitStopTimer = 0;
         this.hitStopDuration = 0;
-        this.playerAnims = {};
         this.frameCounter = 0;
+        this.frozenPlayers = null;
 
         // Camera / Zoom effects
         this.cameraZoom = 1.0;
@@ -30,9 +31,15 @@ export class Renderer {
         this.targetZoom = 1.0;
         this.slowMotionFactor = 1.0;
 
+        // Visual effects for hits
+        this.hitEffects = []; // {x, y, radius, life, type: 'shockwave'|'pow'}
+
         // Optimization: Off-screen canvas for obstacles
         this.obstaclesCanvas = document.createElement('canvas');
         this.obstaclesCtx = this.obstaclesCanvas.getContext('2d');
+
+        // New Procedural Animation System
+        this.animSystem = new AnimationSystem();
 
         this.setupCanvas();
     }
@@ -100,14 +107,9 @@ export class Renderer {
     }
 
     triggerBounce(playerId) {
-        // Impact squash animation
-        this.playerAnims[playerId] = {
-            type: 'deformation', // Reuse deformation logic
-            startTime: Date.now(),
-            duration: 300, // Quick bounce squash 
-            seed: Math.random()
-        };
-        // Add a few particles
+        this.animSystem.trigger(playerId, 'bounce', { duration: 400 });
+        
+        // Particles
         const state = this.network.getState();
         const p = state.players[playerId];
         if (p) {
@@ -121,21 +123,11 @@ export class Renderer {
         }
     }
 
-    triggerSwing(attackerId) {
-        const state = this.network.getState();
-        const attacker = state.players[attackerId];
-        if (!attacker) return;
-
-        // Fast swing for misses (Real-time speed ~300ms)
-        this.playerAnims[attackerId] = {
-            type: 'bat_swing',
-            startTime: Date.now(),
-            duration: 300,
-            distinct: true
-        };
+    triggerSwing(attackerId, direction = 'horizontal') {
+        this.animSystem.trigger(attackerId, 'swing', { duration: 300, direction: direction });
     }
 
-    triggerHitEffect(attackerId, victimId, damage) {
+    triggerHitEffect(attackerId, victimId, damage, ejectionAngle = 0, hitOffsetX = 0) {
         const state = this.network.getState();
         const attacker = state.players[attackerId];
         const victim = state.players[victimId];
@@ -145,47 +137,64 @@ export class Renderer {
         // Cache frozen state for rendering during HitStop
         this.frozenPlayers = JSON.parse(JSON.stringify(state.players));
 
-        // 1. FREEZE FRAME (Arrêt sur image) - Increased to 1.5s as requested
-        this.hitStopDuration = 90; // 90 frames = 1.5s
+        // 1. RALENTI + FREEZE FRAME (Arrêt sur image)
+        this.hitStopDuration = 120; // 2s à 60fps (ralenti)
         this.hitStopTimer = this.hitStopDuration;
+        this.slowMotionFactor = 0.3; // Ralentir à 30% de la vitesse normale
 
-        // 2. ZOOM on Action
+        // 2. ZOOM on Action - Plus prononcé
         this.cameraFocus = {
             x: (attacker.x + victim.x) / 2,
             y: (attacker.y + victim.y) / 2
         };
-        this.cameraZoom = 2.0;
+        this.cameraZoom = 2.0; // Zoom plus fort
+        this.targetZoom = 2.5; // Zoom maximum pendant le hit stop
 
-        // 3. Slow Motion setup (Matrix Style)
-        this.slowMotionFactor = 0.05; // 5% speed (Very slow)
+        // 3. TRIGGER ANIMATIONS
+        this.animSystem.trigger(attackerId, 'victory_pose', { duration: 2000 });
+        this.animSystem.trigger(victimId, 'stunned', { duration: 1500 });
 
-        // 4. ANIMATION DATA (Distinct Frames)
-        this.playerAnims[attackerId] = {
-            type: 'bat_swing',
-            startTime: Date.now(),
-            duration: 4000,
-            distinct: true
-        };
+        // 4. Visual Effects: POW cartoon AMÉLIORÉ (plus visible et intense)
+        const hitX = victim.x;
+        const hitY = victim.y;
+        
+        // POW cartoon (apparaît immédiatement) - PLUS GRAND ET PLUS VISIBLE
+        this.hitEffects.push({
+            x: hitX,
+            y: hitY,
+            radius: 0,
+            maxRadius: 100, // Augmenté de 60 à 100
+            life: 0.8, // Plus long pour être plus visible
+            type: 'pow_cartoon',
+            color: '#ffffff',
+            angle: ejectionAngle
+        });
 
-        this.playerAnims[victimId] = {
-            type: 'stunned',
-            startTime: Date.now(),
-            duration: 4000,
-            seed: Math.random(),
-            isHit: true
-        };
+        // Shockwave (onde de choc circulaire) - PLUS INTENSE
+        this.hitEffects.push({
+            x: hitX,
+            y: hitY,
+            radius: 0,
+            maxRadius: 200, // Augmenté de 150 à 200
+            life: 1.2, // Plus long
+            type: 'shockwave',
+            color: attacker.color || '#ff0044'
+        });
 
-        // 5. Particles
+        // 5. Particles (étincelles) - BEAUCOUP PLUS NOMBREUSES
         if (victim) {
-            for (let i = 0; i < 40; i++) {
+            for (let i = 0; i < 120; i++) { // Doublé de 60 à 120
+                const angle = ejectionAngle + (Math.random() - 0.5) * Math.PI * 1.5; // Angle plus large
+                const speed = 30 + Math.random() * 60; // Vitesse augmentée
                 this.particles.push({
                     x: victim.x,
                     y: victim.y,
-                    vx: (Math.random() - 0.5) * 40,
-                    vy: (Math.random() - 0.5) * 40,
-                    life: 2.0,
-                    color: i % 2 === 0 ? '#ff0044' : '#fff', // White hot
-                    type: 'spark'
+                    vx: Math.cos(angle) * speed,
+                    vy: Math.sin(angle) * speed,
+                    life: 2.0 + Math.random() * 1.0, // Plus long
+                    color: i % 4 === 0 ? '#ff0044' : (i % 4 === 1 ? '#fff' : (i % 4 === 2 ? attacker.color || '#00ffff' : '#ffff00')), 
+                    type: 'spark',
+                    size: 3 + Math.random() * 4 // Plus grandes
                 });
             }
         }
@@ -228,28 +237,34 @@ export class Renderer {
         this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
         // Hit Stop / Slow Motion Logic
-        let renderPlayers = players; // Default to live state
+        // IMPORTANT: Ne pas freeze les joueurs, juste ralentir (la batte doit continuer son mouvement)
+        let renderPlayers = players; // Toujours utiliser l'état live (pas de freeze)
 
         if (this.hitStopTimer > 0) {
-            this.hitStopTimer--;
+            // Ralentir le timer selon le slow motion factor
+            this.hitStopTimer -= (1 - (this.slowMotionFactor || 1) * 0.7); // Ralentir le countdown aussi
 
-            // USE FROZEN STATE during HitStop
-            if (this.frozenPlayers) {
-                renderPlayers = this.frozenPlayers;
-            }
-
-            // Invert flash at start (Impact)
-            if (this.hitStopTimer > this.hitStopDuration - 5) {
+            // Invert flash at start (Impact) - très court
+            if (this.hitStopTimer > this.hitStopDuration - 3) {
                 this.ctx.filter = 'invert(1) contrast(2)';
             } else {
                 this.ctx.filter = 'none';
             }
 
-            // While frozen, keep zoom tight
-            this.targetZoom = 2.5;
+            // Phase 1: Ralenti + Zoom (première moitié)
+            const slowPhase = this.hitStopTimer > this.hitStopDuration * 0.5;
+            if (slowPhase) {
+                this.targetZoom = 2.5;
+                this.slowMotionFactor = 0.3; // Ralenti à 30%
+            } else {
+                // Phase 2: Reprendre progressivement (seconde moitié)
+                const progress = (this.hitStopDuration * 0.5 - this.hitStopTimer) / (this.hitStopDuration * 0.5);
+                this.targetZoom = 2.5 - (1.5 * progress); // Zoom out progressif
+                this.slowMotionFactor = 0.3 + (0.7 * progress); // Reprendre la vitesse progressivement
+            }
 
         } else {
-            // Resume speed
+            // Resume speed normale
             this.ctx.filter = 'none';
             this.frameCounter++;
             this.frozenPlayers = null; // Clear freeze cache
@@ -287,6 +302,7 @@ export class Renderer {
         this.drawPlayers(renderPlayers);
         this.drawGrenades(grenades);
         this.drawExplosions(explosions);
+        this.drawHitEffects(); // Dessiner les effets de contact AVANT les particules
         this.drawParticles();
         this.drawScoreCircles(players, scores);
         this.drawFloatingMessages();
@@ -368,15 +384,43 @@ export class Renderer {
 
         for (const id in players) {
             const p = players[id];
+            
+            // Vérification de sécurité
+            if (!p || p.x === undefined || p.y === undefined || isNaN(p.x) || isNaN(p.y)) {
+                continue;
+            }
 
-            // Update trail
+            // 1. Mise à jour de l'animation procédurale
+            // Passer le slowMotionFactor pour ralentir l'animation pendant le hit stop
+            const animState = this.animSystem.update(id, p, this.slowMotionFactor || 1.0);
+
+            // 2. Traînée (Trail) - comme l'original, avec filtrage simple des sauts
             if (!this.trails[id]) this.trails[id] = [];
-            this.trails[id].push({ x: p.x, y: p.y });
+            
+            const lastPoint = this.trails[id][this.trails[id].length - 1];
+            
+            // Si premier point ou distance raisonnable, ajouter
+            if (!lastPoint) {
+                this.trails[id].push({ x: p.x, y: p.y });
+            } else {
+                const dx = p.x - lastPoint.x;
+                const dy = p.y - lastPoint.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                
+                // Si saut trop grand (téléportation), réinitialiser la traînée
+                if (dist > 200) {
+                    this.trails[id] = [{ x: p.x, y: p.y }];
+                } else {
+                    this.trails[id].push({ x: p.x, y: p.y });
+                }
+            }
+            
+            // Limiter la longueur
             if (this.trails[id].length > GAME_CONFIG.TRAIL_LENGTH) {
                 this.trails[id].shift();
             }
 
-            // Draw trail
+            // Dessin de la traînée
             ctx.save();
             ctx.beginPath();
             if (this.trails[id].length > 0) {
@@ -395,344 +439,208 @@ export class Renderer {
             ctx.stroke();
             ctx.restore();
 
-            // Draw player model (Sphere + Bat)
-            this.drawPlayerModel(ctx, p, id);
+            // 3. Dessin du modèle avec les offsets d'animation
+            this.drawPlayerModel(ctx, p, id, animState);
         }
     }
 
-    drawPlayerModel(ctx, p, id) {
+    drawPlayerModel(ctx, p, id, anim) {
         ctx.save();
+        
+        // 1. Position de base (Serveur)
         ctx.translate(p.x, p.y);
 
-        const anim = this.playerAnims[id];
-        
-        // Vérifier si le joueur est stunned (pour les yeux jaunes)
-        // IMPORTANT: Seule la VICTIME a les yeux en spirale (animation stunned)
-        // L'ATTAQUANT a l'animation bat_swing et victoryStance, PAS stunned
-        // On ne vérifie QUE l'animation stunned, pas isHit (car l'attaquant a aussi isHit=true temporairement)
-        const isStunned = (anim && anim.type === 'stunned');
-
-        // COMIC HIT EFFECT (POW!) - Replaces victim body during impact freeze
-        if (anim && (anim.type === 'deformation' || anim.type === 'stunned') && anim.isHit && this.hitStopTimer > 0) {
-            ctx.fillStyle = '#ffffff'; // White blast
-            ctx.shadowBlur = 20;
-            ctx.shadowColor = '#ffff00'; // Yellow glow
-
-            // Draw Spiky Star
-            ctx.beginPath();
-            const spikes = 12;
-            const outer = 60;
-            const inner = 30;
-            for (let i = 0; i < spikes * 2; i++) {
-                const r = (i % 2 === 0) ? outer : inner;
-                const a = (Math.PI * i) / spikes;
-                ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
-            }
-            ctx.closePath();
-            ctx.fill();
-
-            // Draw Text
-            ctx.shadowBlur = 0;
-            ctx.fillStyle = '#000';
-            ctx.font = 'bold 30px Arial';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.fillText('POW!', 0, 0);
-
-            ctx.restore();
-            return; // HIDE ADVERSARY
+        // 2. Transformations procédurales (Animation System)
+        if (anim.rotation) ctx.rotate(anim.rotation);
+        if (anim.scaleX !== 1 || anim.scaleY !== 1) {
+            ctx.scale(anim.scaleX, anim.scaleY);
         }
+        ctx.globalAlpha = anim.opacity || 1;
 
-        // --- 1. SQUASH & STRETCH (Velocity Based) ---
-        // Calculate velocity from trails if available, or fake it
-        let vx = 0, vy = 0;
-        if (this.trails[id] && this.trails[id].length > 1) {
-            const last = this.trails[id][this.trails[id].length - 1];
-            // Simple velocity estimate
-            vx = (p.x - last.x) * 5;
-            vy = (p.y - last.y) * 5;
-        }
+        // Déclarer facing tôt pour l'utiliser partout
+        const facing = p.facing || 1;
 
-        let stretch = Math.min(Math.sqrt(vx * vx + vy * vy) * 0.02, 0.3);
-        let angle = Math.atan2(vy, vx);
-
-        // Hit Deformation Override
-        let isGlitching = false;
-        if (anim && anim.type === 'deformation') {
-            const elapsed = Date.now() - anim.startTime;
-            if (elapsed < anim.duration) {
-                const progress = elapsed / anim.duration;
-                const intensity = (1 - progress);
-                // Jelly wobble (Visible intensity)
-                stretch = Math.sin(progress * Math.PI * 10) * intensity * 0.25;
-                angle = Math.PI / 2; // Vertical squash
-                if (Math.random() < 0.2 * intensity) isGlitching = true;
-            } else {
-                delete this.playerAnims[id];
-            }
-        }
-
-        ctx.rotate(angle);
-        ctx.scale(1 + stretch, 1 - stretch);
-        ctx.rotate(-angle);
-
-        // --- 2. NEON BODY ---
+        // --- CORPS (Cercle Neon) - Dessiné en deux parties pour cacher la batte ---
         const r = GAME_CONFIG.PLAYER_RADIUS;
-
-        // VICTORY STANCE: Change color to GOLD
-        const bodyColor = p.victoryStance ? '#ffd700' : p.color; // Or (#ffd700) en pose victoire
-        const glowColor = p.victoryStance ? '#ffd700' : p.color;
-
-        // Disable shadow for Fill to prevent "Black Box" artifact
+        const isGold = p.victoryStance;
+        
+        // Partie avant du corps (côté facing) - dessinée APRÈS la batte pour la cacher
+        // On dessinera cette partie plus tard, après les mains
+        
+        // Partie arrière du corps (côté opposé) - dessinée AVANT les mains
         ctx.shadowBlur = 0;
-
-        // Fill (Glassy) - Plus visible en or
-        ctx.fillStyle = bodyColor;
-        ctx.globalAlpha = p.victoryStance ? 0.4 : 0.2; // Plus opaque en or pour meilleure visibilité
+        ctx.fillStyle = isGold ? '#ffd700' : p.color;
+        ctx.globalAlpha = (isGold ? 0.4 : 0.2) * (anim.opacity || 1);
+        
+        // Dessiner seulement la moitié arrière du cercle
         ctx.beginPath();
-        ctx.arc(0, 0, r, 0, Math.PI * 2);
+        if (facing === 1) {
+            // Facing right : dessiner la moitié gauche (arrière)
+            ctx.arc(0, 0, r, Math.PI / 2, 3 * Math.PI / 2);
+        } else {
+            // Facing left : dessiner la moitié droite (arrière)
+            ctx.arc(0, 0, r, -Math.PI / 2, Math.PI / 2);
+        }
         ctx.fill();
 
-        ctx.globalAlpha = 1.0;
-
-        // Stroke (Neon Tube)
+        ctx.globalAlpha = anim.opacity || 1;
         ctx.lineWidth = 3;
-        // White core with colored glow gives best Neon effect
-        ctx.strokeStyle = isGlitching ? '#ffffff' : '#ffffff';
-        ctx.shadowColor = glowColor;
-        ctx.shadowBlur = p.victoryStance ? 30 : 20; // Glow plus fort en or
+        ctx.strokeStyle = '#ffffff';
+        ctx.shadowColor = isGold ? '#ffd700' : p.color;
+        ctx.shadowBlur = isGold ? 30 : 20;
         ctx.stroke();
 
-        // Overlay color stroke for definition - Plus épais en or
         ctx.shadowBlur = 0;
-        ctx.strokeStyle = bodyColor;
-        ctx.lineWidth = p.victoryStance ? 2 : 1; // Ligne plus épaisse en or
+        ctx.strokeStyle = isGold ? '#ffd700' : p.color;
+        ctx.lineWidth = isGold ? 2 : 1;
         ctx.stroke();
 
-        // --- 3. PROCEDURAL FACE (Eye Tracking) ---
+        // --- YEUX (Procedural) ---
         const state = this.network.getState();
         const opponentId = id === 'p1' ? 'p2' : 'p1';
-        const opponent = state.players && state.players[opponentId]; // Safe check
+        const opponent = state.players && state.players[opponentId];
 
-        let lookX = 0, lookY = 0;
+        let lookX = facing * 8; // Regarder dans la direction du mouvement (plus prononcé)
+        let lookY = 0;
+        
+        // Si adversaire présent, combiner avec regard vers adversaire
         if (opponent) {
             const dx = opponent.x - p.x;
             const dy = opponent.y - p.y;
             const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-            lookX = (dx / dist) * 10;
-            lookY = (dy / dist) * 10;
+            // Mélanger regard direction + regard adversaire (60% direction, 40% adversaire)
+            lookX = (facing * 8 * 0.6) + ((dx / dist) * 12 * 0.4);
+            lookY = (dy / dist) * 12 * 0.4;
         }
 
-        // Victory Laugh Shake
-        if (p.victoryStance) {
-            const shake = Math.sin(Date.now() / 50) * 3;
-            ctx.translate(0, shake);
-        }
-
-        // Eyes Group
         ctx.save();
-        // Expression logic
-        let eyeScaleY = 1;
-        let eyeColor = '#fff';
-
-        if (p.victoryStance) {
-            // Happy Eyes (^ ^)
-            ctx.lineWidth = 3;
-            ctx.strokeStyle = '#fff';
-            ctx.shadowBlur = 5;
-
-            // Left Eye ^
-            ctx.beginPath();
-            ctx.moveTo(-20, -5);
-            ctx.lineTo(-15, -10);
-            ctx.lineTo(-10, -5);
-            ctx.stroke();
-
-            // Right Eye ^
-            ctx.beginPath();
-            ctx.moveTo(10, -5);
-            ctx.lineTo(15, -10);
-            ctx.lineTo(20, -5);
-            ctx.stroke();
-
-            eyeScaleY = 0; // Cancel standard eyes
-
-        } else if (isStunned) {
-            // Spiral Eyes (Spiral) - JAUNE pour TOUS les joueurs stunned
-            ctx.strokeStyle = '#ffff00'; // Jaune au lieu de blanc
-            ctx.shadowColor = '#ffff00';
-            ctx.shadowBlur = 10;
-            ctx.lineWidth = 2;
-            const time = Date.now() / 100;
-
-            // Left Spiral
-            ctx.beginPath();
-            for (let i = 0; i < 3.5; i += 0.2) {
-                const r = i * 2;
-                const a = i * 4 + time;
-                // Start from center
-                const x = -15 + Math.cos(a) * r;
-                const y = -5 + Math.sin(a) * r;
-                if (i === 0) ctx.moveTo(x, y);
-                else ctx.lineTo(x, y);
-            }
-            ctx.stroke();
-
-            // Right Spiral
-            ctx.beginPath();
-            for (let i = 0; i < 3.5; i += 0.2) {
-                const r = i * 2;
-                const a = i * 4 + time;
-                const x = 15 + Math.cos(a) * r;
-                const y = -5 + Math.sin(a) * r;
-                if (i === 0) ctx.moveTo(x, y);
-                else ctx.lineTo(x, y);
-            }
-            ctx.stroke();
-            ctx.shadowBlur = 0; // Reset shadow
-
-            eyeScaleY = 0; // Cancel standard eyes
-
-        } else if (anim && anim.type === 'bat_swing') {
-            // Angry eyes on attack
-            eyeScaleY = 0.5;
-            lookY += 5;
-        } else if (p.isHit) {
-            // Shocked/Dead eyes
-            eyeScaleY = 2.0;
-            lookX = (Math.random() - 0.5) * 10;
-            lookY = (Math.random() - 0.5) * 10;
-        }
-
-        // Standard Eyes Drawing
-        if (eyeScaleY > 0) {
+        if (this.animSystem.activeAnimations.get(id)?.currentAction === 'stunned') {
+            // Spiral Eyes - JAUNES (étourdissement)
+            const t = Date.now() / 100;
+            
+            [-15, 15].forEach(offsetX => {
+                ctx.beginPath();
+                for(let i=0; i<3; i+=0.2) {
+                    const radius = i*2;
+                    const angle = i*4 + t;
+                    ctx.lineTo(offsetX + Math.cos(angle)*radius, -5 + Math.sin(angle)*radius);
+                }
+                // Contour jaune brillant
+                ctx.strokeStyle = '#ffff00';
+                ctx.lineWidth = 3;
+                ctx.shadowBlur = 15;
+                ctx.shadowColor = '#ffff00';
+                ctx.stroke();
+                // Intérieur jaune plus clair
+                ctx.strokeStyle = '#ffffaa';
+                ctx.lineWidth = 1.5;
+                ctx.shadowBlur = 0;
+                ctx.stroke();
+            });
+        } else {
+            // Normal Eyes
             ctx.fillStyle = '#fff';
             ctx.shadowBlur = 10;
             ctx.shadowColor = '#fff';
-
-            // Left Eye
             ctx.beginPath();
-            ctx.ellipse(-15 + lookX * 0.3, -5 + lookY * 0.3, 6, 6 * eyeScaleY, 0, 0, Math.PI * 2);
+            ctx.ellipse(-15 + lookX * 0.3, -5 + lookY * 0.3, 6, 6, 0, 0, Math.PI * 2);
             ctx.fill();
-
-            // Right Eye
             ctx.beginPath();
-            ctx.ellipse(15 + lookX * 0.3, -5 + lookY * 0.3, 6, 6 * eyeScaleY, 0, 0, Math.PI * 2);
+            ctx.ellipse(15 + lookX * 0.3, -5 + lookY * 0.3, 6, 6, 0, 0, Math.PI * 2);
             ctx.fill();
         }
         ctx.restore();
 
+        // --- MAINS (Offsets Animation System) ---
+        // Déterminer quelle main tient la batte selon facing (facing déjà déclaré plus haut)
+        const batHand = (facing === 1) ? anim.handRight : anim.handLeft; // Droite si facing right, gauche si facing left
+        const otherHand = (facing === 1) ? anim.handLeft : anim.handRight;
+        
+        // Main arrière (sans batte)
+        ctx.fillStyle = p.color;
+        ctx.shadowBlur = 10;
+        ctx.beginPath();
+        ctx.arc(otherHand.x, otherHand.y, 8, 0, Math.PI * 2);
+        ctx.fill();
 
-        // --- 4. FLOATING HANDS ---
-        // Calculate hand positions
-        const facing = p.facing || 1;
-        const time = Date.now() / 200;
+        // Main avec batte (devant)
+        ctx.save();
+        ctx.translate(batHand.x, batHand.y);
+        
+        // Angle de la batte : pour la main gauche, inverser l'angle pour symétrie
+        let batAngle = anim.batAngle;
+        if (facing === -1) {
+            // Inverser l'angle pour la main gauche (symétrie horizontale)
+            // Si l'angle est négatif, on le rend positif et vice versa
+            batAngle = -batAngle;
+        }
+        ctx.rotate(batAngle);
 
-        // Idle/float offset
-        const flY = Math.sin(time) * 5;
-
-        // Hand positions relative to body center
-        let h1x = 25 * facing, h1y = 10 + flY; // Weapon hand
-        let h2x = -20 * facing, h2y = 10 + flY; // Back hand
-
-        let batRotation = -Math.PI / 4 * facing; // Idle bat pos
-
-        // ANIMATION OVERRIDE
-        if (anim && anim.type === 'bat_swing') {
-            const elapsed = Date.now() - anim.startTime;
-            if (elapsed < anim.duration) {
-                const progress = elapsed / anim.duration;
-                // Reuse existing phases but map to hand position
-                if (progress < 0.3) {
-                    // Wind up
-                    const t = progress / 0.3;
-                    h1x -= 20 * facing * t;
-                    h1y -= 10 * t;
-                    batRotation = (-Math.PI / 4 - Math.PI / 2 * t) * facing;
-                } else if (progress < 0.35) {
-                    // SMASH
-                    h1x += 60 * facing;
-                    batRotation = Math.PI / 2 * facing;
-
-                    // Motion Swipe (Dynamic Crescent - Stroke Only)
-                    ctx.save();
-                    ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
-                    ctx.lineWidth = 40; // Thick swipe
-                    ctx.lineCap = 'round';
-                    ctx.beginPath();
-
-                    if (facing === 1) {
-                        ctx.arc(0, 0, 70, -Math.PI / 2, Math.PI / 2, false);
-                    } else {
-                        ctx.arc(0, 0, 70, Math.PI + Math.PI / 2, Math.PI - Math.PI / 2, true);
-                    }
-                    ctx.stroke();
-                    ctx.restore();
-
-                } else if (progress < 0.6) {
-                    // HOLD
-                    h1x = 40 * facing;
-                    h1y = 0;
-                    batRotation = Math.PI / 2 * facing;
-                    // Shockwave
-                    ctx.save();
-                    ctx.strokeStyle = '#fff';
-                    ctx.lineWidth = 4;
-                    ctx.beginPath();
-                    ctx.arc(h1x, h1y, 50 + (progress - 0.35) * 200, 0, Math.PI * 2);
-                    ctx.stroke();
-                    ctx.restore();
-                } else {
-                    // Recover
-                    h1x = 25 * facing;
-                    h1y = 10;
-                    batRotation = -Math.PI / 4 * facing;
-                }
-            } else {
-                delete this.playerAnims[id];
-            }
+        // Batte - dessinée avec le manche au centre (0,0) et la tête vers la droite
+        // Pour la main gauche, on dessine la batte inversée (tête vers la gauche)
+        ctx.fillStyle = '#eee';
+        ctx.shadowColor = '#fff';
+        ctx.shadowBlur = 15;
+        
+        if (facing === 1) {
+            // Main droite : batte normale (tête vers la droite)
+            ctx.fillRect(-2, -5, 15, 6); // Manche
+            ctx.beginPath();
+            ctx.moveTo(10, -5);
+            ctx.lineTo(80, -10);
+            ctx.quadraticCurveTo(90, -5, 90, 0);
+            ctx.quadraticCurveTo(90, 5, 80, 10);
+            ctx.lineTo(10, 5);
+            ctx.fill();
+        } else {
+            // Main gauche : batte inversée (tête vers la gauche)
+            ctx.fillRect(-13, -5, 15, 6); // Manche (inversé)
+            ctx.beginPath();
+            ctx.moveTo(-10, -5);
+            ctx.lineTo(-80, -10);
+            ctx.quadraticCurveTo(-90, -5, -90, 0);
+            ctx.quadraticCurveTo(-90, 5, -80, 10);
+            ctx.lineTo(-10, 5);
+            ctx.fill();
         }
 
-        // Draw Hands
-        ctx.fillStyle = p.color; // Solid neon color
-        ctx.shadowBlur = 15;
-
-        // Back Hand
-        ctx.beginPath();
-        ctx.arc(h2x, h2y, 8, 0, Math.PI * 2);
-        ctx.fill();
-
-        // Front Hand (Weapon Hand)
-        ctx.save();
-        ctx.translate(h1x, h1y);
-        ctx.rotate(batRotation);
-
-        // BAT
-        ctx.fillStyle = '#eee'; // White-ish neon bat
-        ctx.shadowColor = '#fff';
-        ctx.shadowBlur = 20;
-
-        // Handle
-        ctx.fillRect(-2, -5, 15, 6); // Hand grip area
-        // Bat body
-        ctx.beginPath();
-        ctx.moveTo(10, -5);
-        ctx.lineTo(80, -10);
-        ctx.quadraticCurveTo(90, -5, 90, 0); // Tip rounded
-        ctx.quadraticCurveTo(90, 5, 80, 10);
-        ctx.lineTo(10, 5);
-        ctx.fill();
-
-        // Hand circle on top of bat handle - Or en victory stance
-        ctx.fillStyle = p.victoryStance ? '#ffd700' : p.color;
-        ctx.shadowColor = p.victoryStance ? '#ffd700' : p.color;
+        // Main (sur le manche)
+        ctx.fillStyle = p.color;
+        ctx.shadowColor = p.color;
         ctx.beginPath();
         ctx.arc(0, 0, 8, 0, Math.PI * 2);
         ctx.fill();
 
-        ctx.restore(); // End Hand/Bat transform
+        ctx.restore(); // Fin main avec batte
+        
+        // Partie avant du corps (côté facing) - dessinée APRÈS pour cacher la batte qui passe derrière
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = isGold ? '#ffd700' : p.color;
+        ctx.globalAlpha = (isGold ? 0.4 : 0.2) * (anim.opacity || 1);
+        
+        ctx.beginPath();
+        if (facing === 1) {
+            // Facing right : dessiner la moitié droite (avant)
+            ctx.arc(0, 0, r, -Math.PI / 2, Math.PI / 2);
+        } else {
+            // Facing left : dessiner la moitié gauche (avant)
+            ctx.arc(0, 0, r, Math.PI / 2, 3 * Math.PI / 2);
+        }
+        ctx.fill();
 
-        ctx.restore(); // End Player transform
+        ctx.globalAlpha = anim.opacity || 1;
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = '#ffffff';
+        ctx.shadowColor = isGold ? '#ffd700' : p.color;
+        ctx.shadowBlur = isGold ? 30 : 20;
+        ctx.stroke();
+
+        ctx.shadowBlur = 0;
+        ctx.strokeStyle = isGold ? '#ffd700' : p.color;
+        ctx.lineWidth = isGold ? 2 : 1;
+        ctx.stroke();
+        
+        ctx.restore(); // Fin joueur
     }
 
     drawGrenades(grenades) {
@@ -775,13 +683,120 @@ export class Renderer {
         }
     }
 
+    drawHitEffects() {
+        const ctx = this.ctx;
+        const deltaTime = 0.016; // ~60fps
+        
+        for (let i = this.hitEffects.length - 1; i >= 0; i--) {
+            const effect = this.hitEffects[i];
+            effect.life -= deltaTime;
+            
+            if (effect.life <= 0) {
+                this.hitEffects.splice(i, 1);
+                continue;
+            }
+            
+            // Calculer la durée de vie maximale selon le type
+            const maxLife = effect.type === 'shockwave' ? 1.2 : (effect.type === 'pow_cartoon' ? 0.8 : 1.0);
+            const progress = Math.max(0, Math.min(1, 1 - (effect.life / maxLife)));
+            
+            if (effect.type === 'shockwave') {
+                // Onde de choc circulaire qui s'étend
+                effect.radius = Math.max(0, effect.maxRadius * progress); // S'assurer que le rayon n'est jamais négatif
+                const alpha = 1 - progress;
+                
+                ctx.save();
+                ctx.strokeStyle = effect.color;
+                ctx.lineWidth = 3;
+                ctx.globalAlpha = alpha * 0.8;
+                ctx.shadowBlur = 20;
+                ctx.shadowColor = effect.color;
+                ctx.beginPath();
+                ctx.arc(effect.x, effect.y, effect.radius, 0, Math.PI * 2);
+                ctx.stroke();
+                ctx.restore();
+            } else if (effect.type === 'pow') {
+                // Effet POW (explosion de contact)
+                effect.radius = Math.max(0, effect.maxRadius * (1 - Math.pow(1 - progress, 2))); // S'assurer que le rayon n'est jamais négatif
+                const alpha = Math.max(0, Math.min(1, 1 - progress));
+                
+                ctx.save();
+                ctx.translate(effect.x, effect.y);
+                ctx.rotate(effect.angle || 0);
+                
+                // Cercle central brillant
+                ctx.fillStyle = effect.color;
+                ctx.globalAlpha = alpha;
+                ctx.shadowBlur = 30;
+                ctx.shadowColor = effect.color;
+                ctx.beginPath();
+                ctx.arc(0, 0, effect.radius * 0.3, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Rayons explosifs
+                ctx.strokeStyle = effect.color;
+                ctx.lineWidth = 4;
+                ctx.globalAlpha = alpha * 0.6;
+                for (let j = 0; j < 8; j++) {
+                    const angle = (j / 8) * Math.PI * 2;
+                    ctx.beginPath();
+                    ctx.moveTo(0, 0);
+                    ctx.lineTo(Math.cos(angle) * effect.radius, Math.sin(angle) * effect.radius);
+                    ctx.stroke();
+                }
+                
+                ctx.restore();
+            } else if (effect.type === 'pow_cartoon') {
+                // Effet POW cartoon AMÉLIORÉ - PLUS GRAND ET PLUS VISIBLE
+                const scale = 1 + progress * 1.0; // Grandit plus (de 0.5 à 1.0)
+                const alpha = 1 - progress; // Disparaît progressivement
+                
+                ctx.save();
+                ctx.translate(effect.x, effect.y);
+                ctx.rotate(effect.angle || 0);
+                ctx.scale(scale, scale);
+                
+                // Texte "POW!" style cartoon - PLUS GRAND
+                ctx.fillStyle = '#ffffff';
+                ctx.strokeStyle = '#000000';
+                ctx.lineWidth = 6; // Contour plus épais (de 4 à 6)
+                ctx.font = 'bold 48px Arial'; // Plus grand (de 32 à 48)
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.globalAlpha = alpha;
+                ctx.shadowBlur = 20; // Ombre plus prononcée (de 10 à 20)
+                ctx.shadowColor = '#ffff00';
+                
+                // Contour noir épais
+                ctx.strokeText('POW!', 0, 0);
+                // Texte blanc
+                ctx.fillText('POW!', 0, 0);
+                
+                // Étoiles autour (effet cartoon) - PLUS NOMBREUSES ET PLUS VISIBLES
+                ctx.strokeStyle = '#ffff00';
+                ctx.lineWidth = 3; // Plus épais (de 2 à 3)
+                ctx.globalAlpha = alpha * 0.8; // Plus visible (de 0.6 à 0.8)
+                for (let j = 0; j < 8; j++) { // Plus nombreuses (de 4 à 8)
+                    const starAngle = (j / 8) * Math.PI * 2;
+                    const starDist = 40; // Plus loin (de 25 à 40)
+                    ctx.beginPath();
+                    ctx.moveTo(0, 0);
+                    ctx.lineTo(Math.cos(starAngle) * starDist, Math.sin(starAngle) * starDist);
+                    ctx.stroke();
+                }
+                
+                ctx.restore();
+            }
+        }
+    }
+
     drawParticles() {
         const ctx = this.ctx;
 
         for (let i = this.particles.length - 1; i >= 0; i--) {
             const p = this.particles[i];
-            p.x += p.vx;
-            p.y += p.vy;
+            p.x += p.vx * 0.1;
+            p.y += p.vy * 0.1;
             p.life -= 0.02;
 
             if (p.life <= 0) {
@@ -789,9 +804,15 @@ export class Renderer {
                 continue;
             }
 
-            ctx.globalAlpha = p.life;
+            const alpha = Math.min(1, p.life);
             ctx.fillStyle = p.color;
-            ctx.fillRect(p.x, p.y, 5, 5);
+            ctx.globalAlpha = alpha;
+            ctx.shadowBlur = 5;
+            ctx.shadowColor = p.color;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.size || 2, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.shadowBlur = 0;
             ctx.globalAlpha = 1;
         }
     }
