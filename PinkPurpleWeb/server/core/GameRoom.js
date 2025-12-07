@@ -1,6 +1,7 @@
 const { WIDTH, HEIGHT, R_MAX } = require('../constants');
 const Player = require('../entities/Player');
 const Grenade = require('../entities/Grenade');
+const SimplifiedRagdollService = require('../physics/SimplifiedRagdollService');
 
 class GameRoom {
     constructor(id, io, botCallbacks) {
@@ -13,6 +14,13 @@ class GameRoom {
         this.grenades = []; // Active grenades
         this.lastBroadcastState = null; // For delta compression
         this.globalHitStop = 0; // Global freeze timer
+
+        // Ragdoll service
+        this.ragdollService = new SimplifiedRagdollService({
+            gravity: 8,
+            timeStep: 1 / 60
+        });
+
         this.generateObstacles();
     }
 
@@ -36,17 +44,27 @@ class GameRoom {
     addPlayer(socket, name) {
         if (!this.players['p1']) {
             this.players['p1'] = new Player(socket.id, true, name);
+            // Créer ragdoll pour P1
+            this.ragdollService.createRagdoll(socket.id, this.players['p1'].x, this.players['p1'].y, true);
             return 'p1';
         } else if (!this.players['p2']) {
             this.players['p2'] = new Player(socket.id, false, name);
+            // Créer ragdoll pour P2
+            this.ragdollService.createRagdoll(socket.id, this.players['p2'].x, this.players['p2'].y, false);
             return 'p2';
         }
         return 'spectator';
     }
 
     removePlayer(socketId) {
-        if (this.players['p1'] && this.players['p1'].id === socketId) delete this.players['p1'];
-        if (this.players['p2'] && this.players['p2'].id === socketId) delete this.players['p2'];
+        if (this.players['p1'] && this.players['p1'].id === socketId) {
+            this.ragdollService.destroyRagdoll(socketId);
+            delete this.players['p1'];
+        }
+        if (this.players['p2'] && this.players['p2'].id === socketId) {
+            this.ragdollService.destroyRagdoll(socketId);
+            delete this.players['p2'];
+        }
     }
 
     getPlayerNames() {
@@ -66,6 +84,9 @@ class GameRoom {
             }
             return;
         }
+
+        // Update ragdoll physics
+        this.ragdollService.update(1 / 60);
 
         const p1 = this.players['p1'];
         const p2 = this.players['p2'];
@@ -162,6 +183,18 @@ class GameRoom {
                 p1.enterVictoryStance();
                 p1.isHit = false;
 
+                // ACTIVER RAGDOLL pour P2
+                const contactPoint = {
+                    x: p2.x + Math.cos(ejectionAngle) * 25,
+                    y: p2.y + Math.sin(ejectionAngle) * 25
+                };
+                this.ragdollService.applyImpact(
+                    p2.id,
+                    ejectionAngle,
+                    p2.damage * 1.5,  // Force basée sur dégâts
+                    contactPoint
+                );
+
                 // CRITICAL FIX: P2 is stunned, so they CANNOT attack P1 back in this frame
                 p2.isHit = false;
                 p2.activeHitboxTimer = 0;
@@ -202,6 +235,18 @@ class GameRoom {
                     p1.prepareEjection(ejectionAngle);
                     p2.enterVictoryStance();
                     p2.isHit = false;
+
+                    // ACTIVER RAGDOLL pour P1
+                    const contactPoint = {
+                        x: p1.x + Math.cos(ejectionAngle) * 25,
+                        y: p1.y + Math.sin(ejectionAngle) * 25
+                    };
+                    this.ragdollService.applyImpact(
+                        p1.id,
+                        ejectionAngle,
+                        p1.damage * 1.5,
+                        contactPoint
+                    );
 
                     // CRITICAL FIX: P1 is stunned
                     p1.isHit = false;

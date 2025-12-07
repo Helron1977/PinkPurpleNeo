@@ -4,6 +4,8 @@
  */
 
 import { GAME_CONFIG, COLORS } from './constants.js';
+import { RagdollClientService } from './ragdoll/RagdollClientService.js';
+import { RagdollRenderer } from './ragdoll/RagdollRenderer.js';
 
 export class Renderer {
     constructor(canvas, networkManager) {
@@ -29,6 +31,10 @@ export class Renderer {
         this.cameraFocus = { x: GAME_CONFIG.WIDTH / 2, y: GAME_CONFIG.HEIGHT / 2 };
         this.targetZoom = 1.0;
         this.slowMotionFactor = 1.0;
+
+        // Ragdoll system
+        this.ragdollService = new RagdollClientService();
+        this.ragdollRenderer = new RagdollRenderer(this.ctx);
 
         // Optimization: Off-screen canvas for obstacles
         this.obstaclesCanvas = document.createElement('canvas');
@@ -369,6 +375,14 @@ export class Renderer {
         for (const id in players) {
             const p = players[id];
 
+            // Initialiser ragdoll si nécessaire
+            if (!this.ragdollService.getRagdollState(id)) {
+                this.ragdollService.createRagdoll(id);
+            }
+
+            // Mettre à jour état ragdoll depuis player state
+            this.ragdollService.updateFromPlayer(id, p);
+
             // Update trail
             if (!this.trails[id]) this.trails[id] = [];
             this.trails[id].push({ x: p.x, y: p.y });
@@ -395,8 +409,20 @@ export class Renderer {
             ctx.stroke();
             ctx.restore();
 
-            // Draw player model (Sphere + Bat)
-            this.drawPlayerModel(ctx, p, id);
+            // Décider du mode de rendu
+            const ragdollState = this.ragdollService.getRagdollState(id);
+            const useRagdoll = ragdollState && ragdollState.enabled;
+
+            if (useRagdoll) {
+                // Rendu ragdoll avec déformations
+                this.ragdollRenderer.drawRagdoll(ragdollState, {
+                    color: p.color,
+                    glowColor: p.color
+                });
+            } else {
+                // Rendu normal  (sphère + mains + batte)
+                this.drawPlayerModel(ctx, p, id);
+            }
         }
     }
 
@@ -405,7 +431,7 @@ export class Renderer {
         ctx.translate(p.x, p.y);
 
         const anim = this.playerAnims[id];
-        
+
         // Vérifier si le joueur est stunned (pour les yeux jaunes)
         // IMPORTANT: Seule la VICTIME a les yeux en spirale (animation stunned)
         // L'ATTAQUANT a l'animation bat_swing et victoryStance, PAS stunned
