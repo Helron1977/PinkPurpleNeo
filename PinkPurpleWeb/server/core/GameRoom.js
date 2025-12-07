@@ -128,14 +128,24 @@ class GameRoom {
             // Priority check: did P1 hit P2?
             let p1HitP2 = false;
             if (p1.isHit && checkHit(p1, p2, dist, angleV1V2)) {
-                // CORRECTION ANGLE: Utiliser l'angle de la batte (basé sur facing) plutôt que l'angle direct
-                // La batte frappe dans la direction du facing, mais avec un angle vers le haut
-                // Calculer l'angle d'éjection basé sur la direction de la batte + position relative
-                const batAngle = p1.lastFacing === 1 ? 0 : Math.PI; // Direction horizontale de la batte
-                // Ajuster selon la position verticale de la victime
-                const verticalOffset = Math.atan2(dy, Math.abs(dx)); // Angle vertical relatif
-                // Combiner: direction de la batte + composante verticale
-                const ejectionAngle = batAngle + Math.max(-Math.PI / 3, Math.min(Math.PI / 3, verticalOffset * 0.5));
+                // CALCUL ANGLE D'ÉJECTION basé sur la direction réelle de la batte
+                // Utiliser lastAction pour déterminer la direction de l'attaque
+                let batAngle;
+                if (p1.lastAction === 'UP') {
+                    // Attaque vers le haut : angle vertical vers le haut
+                    batAngle = -Math.PI / 2; // Vers le haut
+                    // Ajuster légèrement selon la position relative
+                    const horizontalOffset = Math.atan2(dx, Math.abs(dy)) * 0.3;
+                    batAngle += horizontalOffset;
+                } else {
+                    // Attaque horizontale : direction basée sur facing
+                    batAngle = p1.lastFacing === 1 ? 0 : Math.PI; // Direction horizontale de la batte
+                    // Ajuster selon la position verticale de la victime
+                    const verticalOffset = Math.atan2(dy, Math.abs(dx)); // Angle vertical relatif
+                    // Combiner: direction de la batte + composante verticale
+                    batAngle += Math.max(-Math.PI / 3, Math.min(Math.PI / 3, verticalOffset * 0.5));
+                }
+                const ejectionAngle = batAngle;
                 
                 p2.prepareEjection(ejectionAngle); // Prepare Launch avec angle corrigé
                 p1.enterVictoryStance(); // ATTACKER FLOATS
@@ -158,12 +168,21 @@ class GameRoom {
             if (!p1HitP2 && p2.isHit) {
                 const angleV2V1 = Math.atan2(-dy, -dx);
                 if (checkHit(p2, p1, dist, angleV2V1)) {
-                    // CORRECTION ANGLE: Utiliser l'angle de la batte (basé sur facing) plutôt que l'angle direct
-                    const batAngle = p2.lastFacing === 1 ? 0 : Math.PI; // Direction horizontale de la batte
-                    // Ajuster selon la position verticale de la victime
-                    const verticalOffset = Math.atan2(-dy, Math.abs(-dx)); // Angle vertical relatif
-                    // Combiner: direction de la batte + composante verticale
-                    const ejectionAngle = batAngle + Math.max(-Math.PI / 3, Math.min(Math.PI / 3, verticalOffset * 0.5));
+                    // CALCUL ANGLE D'ÉJECTION basé sur la direction réelle de la batte
+                    let batAngle;
+                    if (p2.lastAction === 'UP') {
+                        // Attaque vers le haut : angle vertical vers le haut
+                        batAngle = -Math.PI / 2; // Vers le haut
+                        // Ajuster légèrement selon la position relative
+                        const horizontalOffset = Math.atan2(-dx, Math.abs(-dy)) * 0.3;
+                        batAngle += horizontalOffset;
+                    } else {
+                        // Attaque horizontale : direction basée sur facing
+                        batAngle = p2.lastFacing === 1 ? 0 : Math.PI;
+                        const verticalOffset = Math.atan2(-dy, Math.abs(-dx));
+                        batAngle += Math.max(-Math.PI / 3, Math.min(Math.PI / 3, verticalOffset * 0.5));
+                    }
+                    const ejectionAngle = batAngle;
                     
                     p1.prepareEjection(ejectionAngle); // Prepare Launch avec angle corrigé
                     p2.enterVictoryStance(); // ATTACKER FLOATS

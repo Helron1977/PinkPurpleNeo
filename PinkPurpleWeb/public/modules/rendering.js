@@ -4,6 +4,8 @@
  */
 
 import { GAME_CONFIG, COLORS } from './constants.js';
+import { Projection3D } from './animations/Projection3D.js';
+import { ComboSystem } from './ComboSystem.js';
 
 export class Renderer {
     constructor(canvas, networkManager) {
@@ -34,6 +36,12 @@ export class Renderer {
         this.obstaclesCanvas = document.createElement('canvas');
         this.obstaclesCtx = this.obstaclesCanvas.getContext('2d');
 
+        // Système de projection 3D pour calculer les positions
+        this.projection3D = new Projection3D();
+        
+        // Système de combo original
+        this.comboSystem = new ComboSystem();
+
         this.setupCanvas();
     }
 
@@ -54,6 +62,11 @@ export class Renderer {
         this.obstaclesCanvas.width = GAME_CONFIG.WIDTH;
         this.obstaclesCanvas.height = GAME_CONFIG.HEIGHT;
         this.preRenderObstacles();
+
+        // Resize Zdog (utilise canvas offscreen à taille fixe du jeu)
+        if (this.player3DRenderer) {
+            this.player3DRenderer.resize(this.scale);
+        }
     }
 
     setObstacles(obstacles) {
@@ -107,6 +120,11 @@ export class Renderer {
             duration: 300, // Quick bounce squash 
             seed: Math.random()
         };
+        
+        // Déclencher animation Zdog
+        // Animation bounce gérée directement dans drawPlayerModel
+        // L'animation est déjà déclenchée via playerAnims
+
         // Add a few particles
         const state = this.network.getState();
         const p = state.players[playerId];
@@ -133,6 +151,8 @@ export class Renderer {
             duration: 300,
             distinct: true
         };
+
+        // Animation swing gérée par playerAnims
     }
 
     triggerHitEffect(attackerId, victimId, damage) {
@@ -160,11 +180,16 @@ export class Renderer {
         this.slowMotionFactor = 0.05; // 5% speed (Very slow)
 
         // 4. ANIMATION DATA (Distinct Frames)
+        // Déterminer la direction de l'attaque basée sur lastAction
+        const attackDirection = attacker.lastAction === 'UP' ? 'up' : 
+                                (attacker.lastFacing === 1 ? 'right' : 'left');
+        
         this.playerAnims[attackerId] = {
             type: 'bat_swing',
             startTime: Date.now(),
             duration: 4000,
-            distinct: true
+            distinct: true,
+            direction: attackDirection // Stocker la direction
         };
 
         this.playerAnims[victimId] = {
@@ -175,7 +200,21 @@ export class Renderer {
             isHit: true
         };
 
-        // 5. Particles
+        // Animations gérées par playerAnims (swing pour attaquant, stunned pour victime)
+        
+        // 5. COMBO SYSTEM - Enregistrer le hit pour le combo
+        const combo = this.comboSystem.recordHit(attackerId);
+        if (combo.level >= 2) {
+            // Afficher l'effet de combo
+            this.addFloatingText(
+                attacker.x, 
+                attacker.y - 40, 
+                `${combo.count}x ${combo.name}`, 
+                combo.color
+            );
+        }
+
+        // 6. Particles
         if (victim) {
             for (let i = 0; i < 40; i++) {
                 this.particles.push({
@@ -290,6 +329,18 @@ export class Renderer {
         this.drawParticles();
         this.drawScoreCircles(players, scores);
         this.drawFloatingMessages();
+        
+        // Mettre à jour le système de combo
+        this.comboSystem.update();
+        
+        // Afficher les combos actifs
+        this.drawCombos(renderPlayers);
+        
+        // Mettre à jour le système de combo
+        this.comboSystem.update();
+        
+        // Afficher les combos actifs
+        this.drawCombos(renderPlayers);
 
         this.animationId = requestAnimationFrame(() => this.draw());
     }
@@ -376,7 +427,7 @@ export class Renderer {
                 this.trails[id].shift();
             }
 
-            // Draw trail
+            // Draw trail (2D - reste sur le canvas principal)
             ctx.save();
             ctx.beginPath();
             if (this.trails[id].length > 0) {
@@ -395,8 +446,8 @@ export class Renderer {
             ctx.stroke();
             ctx.restore();
 
-            // Draw player model (Sphere + Bat)
-            this.drawPlayerModel(ctx, p, id);
+            // Rendu avec calculs 3D (utilise Projection3D pour les positions)
+            this.drawPlayerModel(this.ctx, p, id);
         }
     }
 
@@ -472,12 +523,15 @@ export class Renderer {
             }
         }
 
+        // --- 2. NEON BODY ---
+        const r = GAME_CONFIG.PLAYER_RADIUS;
+        
+        // Pas de masquage - on laisse tout visible pour que la batte soit complète
+        // Le masquage 3D sera géré différemment si nécessaire
+        
         ctx.rotate(angle);
         ctx.scale(1 + stretch, 1 - stretch);
         ctx.rotate(-angle);
-
-        // --- 2. NEON BODY ---
-        const r = GAME_CONFIG.PLAYER_RADIUS;
 
         // VICTORY STANCE: Change color to GOLD
         const bodyColor = p.victoryStance ? '#ffd700' : p.color; // Or (#ffd700) en pose victoire
@@ -509,18 +563,28 @@ export class Renderer {
         ctx.lineWidth = p.victoryStance ? 2 : 1; // Ligne plus épaisse en or
         ctx.stroke();
 
-        // --- 3. PROCEDURAL FACE (Eye Tracking) ---
+        // --- 3. PROCEDURAL FACE (Eye Tracking) - Placement logique selon direction ---
+        const facing = p.facing || 1;
         const state = this.network.getState();
         const opponentId = id === 'p1' ? 'p2' : 'p1';
         const opponent = state.players && state.players[opponentId]; // Safe check
 
+        // Placement des yeux selon la direction (rotation de la sphère en 2D)
+        // Quand facing = 1 (droite), yeux à droite, quand facing = -1 (gauche), yeux à gauche
+        let eyeOffsetX = 0;
+        if (facing === 1) {
+            eyeOffsetX = 3; // Yeux décalés vers la droite
+        } else {
+            eyeOffsetX = -3; // Yeux décalés vers la gauche
+        }
+        
         let lookX = 0, lookY = 0;
         if (opponent) {
             const dx = opponent.x - p.x;
             const dy = opponent.y - p.y;
             const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-            lookX = (dx / dist) * 10;
-            lookY = (dy / dist) * 10;
+            lookX = (dx / dist) * 8;
+            lookY = (dy / dist) * 8;
         }
 
         // Victory Laugh Shake
@@ -594,9 +658,15 @@ export class Renderer {
             eyeScaleY = 0; // Cancel standard eyes
 
         } else if (anim && anim.type === 'bat_swing') {
-            // Angry eyes on attack
-            eyeScaleY = 0.5;
-            lookY += 5;
+            // Yeux concentrés/agressifs pendant l'attaque
+            const direction = anim.direction || (facing === 1 ? 'right' : 'left');
+            if (direction === 'up') {
+                eyeScaleY = 0.6; // Yeux plus ronds pour l'attaque vers le haut
+                lookY -= 3; // Regarder vers le haut
+            } else {
+                eyeScaleY = 0.4; // Yeux plus étroits pour attaque horizontale
+                lookX += 2 * facing; // Regarder dans la direction de l'attaque
+            }
         } else if (p.isHit) {
             // Shocked/Dead eyes
             eyeScaleY = 2.0;
@@ -604,107 +674,255 @@ export class Renderer {
             lookY = (Math.random() - 0.5) * 10;
         }
 
-        // Standard Eyes Drawing
+        // Standard Eyes Drawing - Placement logique selon direction
         if (eyeScaleY > 0) {
             ctx.fillStyle = '#fff';
             ctx.shadowBlur = 10;
             ctx.shadowColor = '#fff';
 
+            // Position des yeux avec offset selon direction + tracking
+            const leftEyeX = -15 + eyeOffsetX + lookX * 0.3;
+            const rightEyeX = 15 + eyeOffsetX + lookX * 0.3;
+            const eyeY = -5 + lookY * 0.3;
+            
             // Left Eye
             ctx.beginPath();
-            ctx.ellipse(-15 + lookX * 0.3, -5 + lookY * 0.3, 6, 6 * eyeScaleY, 0, 0, Math.PI * 2);
+            ctx.ellipse(leftEyeX, eyeY, 6, 6 * eyeScaleY, 0, 0, Math.PI * 2);
             ctx.fill();
 
             // Right Eye
             ctx.beginPath();
-            ctx.ellipse(15 + lookX * 0.3, -5 + lookY * 0.3, 6, 6 * eyeScaleY, 0, 0, Math.PI * 2);
+            ctx.ellipse(rightEyeX, eyeY, 6, 6 * eyeScaleY, 0, 0, Math.PI * 2);
             ctx.fill();
         }
         ctx.restore();
 
 
-        // --- 4. FLOATING HANDS ---
-        // Calculate hand positions
-        const facing = p.facing || 1;
+        // --- 4. FLOATING HANDS (avec calculs 3D) ---
+        // Calculate hand positions en 3D puis projection
+        // facing déjà déclaré plus haut
         const time = Date.now() / 200;
 
         // Idle/float offset
         const flY = Math.sin(time) * 5;
 
-        // Hand positions relative to body center
-        let h1x = 25 * facing, h1y = 10 + flY; // Weapon hand
-        let h2x = -20 * facing, h2y = 10 + flY; // Back hand
+        // Hand positions 3D relatives au centre du corps
+        // On utilise des coordonnées 3D pour avoir une meilleure rotation
+        let h1x3D = 25 * facing, h1y3D = 10 + flY, h1z3D = 0; // Weapon hand
+        let h2x3D = -20 * facing, h2y3D = 10 + flY, h2z3D = 0; // Back hand
 
         let batRotation = -Math.PI / 4 * facing; // Idle bat pos
+        let bodyRotationZ = 0; // Rotation du corps pour les animations
 
-        // ANIMATION OVERRIDE
+        // ANIMATION OVERRIDE avec 3 directions distinctes
         if (anim && anim.type === 'bat_swing') {
             const elapsed = Date.now() - anim.startTime;
             if (elapsed < anim.duration) {
                 const progress = elapsed / anim.duration;
-                // Reuse existing phases but map to hand position
-                if (progress < 0.3) {
-                    // Wind up
-                    const t = progress / 0.3;
-                    h1x -= 20 * facing * t;
-                    h1y -= 10 * t;
-                    batRotation = (-Math.PI / 4 - Math.PI / 2 * t) * facing;
-                } else if (progress < 0.35) {
-                    // SMASH
-                    h1x += 60 * facing;
-                    batRotation = Math.PI / 2 * facing;
-
-                    // Motion Swipe (Dynamic Crescent - Stroke Only)
-                    ctx.save();
-                    ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
-                    ctx.lineWidth = 40; // Thick swipe
-                    ctx.lineCap = 'round';
-                    ctx.beginPath();
-
-                    if (facing === 1) {
-                        ctx.arc(0, 0, 70, -Math.PI / 2, Math.PI / 2, false);
+                const direction = anim.direction || (facing === 1 ? 'right' : 'left');
+                
+                if (direction === 'up') {
+                    // === ATTAQUE VERS LE HAUT : CERCLE COMPLET ===
+                    if (progress < 0.25) {
+                        // Wind up : descendre la batte
+                        const t = progress / 0.25;
+                        h1x3D = 25 * facing;
+                        h1y3D = 30 - 25 * t; // Descend de 30 à 5
+                        h1z3D = -10 * t; // Recule en 3D
+                        batRotation = (3 * Math.PI / 2) - (t * Math.PI / 2); // De 270° à 180°
+                        bodyRotationZ = -0.2 * t; // Légère rotation du corps
+                    } else if (progress < 0.5) {
+                        // SMASH : Cercle complet MAGNIFIQUE de bas en haut
+                        const t = (progress - 0.25) / 0.25;
+                        const swing = 1 - Math.pow(1 - t, 3); // Easing cubique
+                        const angle = Math.PI + (swing * Math.PI * 2); // De 180° à 540° (cercle complet)
+                        const radius = 60; // Rayon plus grand pour effet plus spectaculaire
+                        
+                        // Position 3D avec mouvement circulaire fluide
+                        h1x3D = (25 * facing) + radius * Math.cos(angle) * facing;
+                        h1y3D = 10 + radius * Math.sin(angle);
+                        h1z3D = -15 + (swing * 30); // Avance en 3D de manière plus prononcée
+                        batRotation = angle;
+                        bodyRotationZ = -0.3 + (0.6 * swing); // Rotation du corps plus prononcée
+                        
+                        // Motion Swipe amélioré avec effet de traînée
+                        ctx.save();
+                        // Traînée principale
+                        ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
+                        ctx.lineWidth = 60;
+                        ctx.lineCap = 'round';
+                        ctx.beginPath();
+                        ctx.arc(0, 0, radius, Math.PI, Math.PI + (swing * Math.PI * 2), false);
+                        ctx.stroke();
+                        
+                        // Traînée secondaire (plus fine, plus transparente)
+                        ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+                        ctx.lineWidth = 40;
+                        ctx.beginPath();
+                        ctx.arc(0, 0, radius + 10, Math.PI, Math.PI + (swing * Math.PI * 2), false);
+                        ctx.stroke();
+                        
+                        // Particules d'énergie au point d'impact
+                        if (swing > 0.7) {
+                            const particleCount = Math.floor((swing - 0.7) * 10);
+                            for (let i = 0; i < particleCount; i++) {
+                                const pAngle = angle + (Math.random() - 0.5) * 0.5;
+                                const pDist = radius + Math.random() * 20;
+                                ctx.fillStyle = `rgba(255, 255, 255, ${0.8 - swing})`;
+                                ctx.beginPath();
+                                ctx.arc(
+                                    Math.cos(pAngle) * pDist * facing,
+                                    Math.sin(pAngle) * pDist,
+                                    3, 0, Math.PI * 2
+                                );
+                                ctx.fill();
+                            }
+                        }
+                        ctx.restore();
                     } else {
-                        ctx.arc(0, 0, 70, Math.PI + Math.PI / 2, Math.PI - Math.PI / 2, true);
+                        // Recovery
+                        const t = (progress - 0.5) / 0.5;
+                        h1x3D = 25 * facing;
+                        h1y3D = 10 + (5 * (1 - t));
+                        h1z3D = 10 * (1 - t);
+                        batRotation = (-Math.PI / 4) * facing;
+                        bodyRotationZ = 0.2 * (1 - t);
                     }
-                    ctx.stroke();
-                    ctx.restore();
-
-                } else if (progress < 0.6) {
-                    // HOLD
-                    h1x = 40 * facing;
-                    h1y = 0;
-                    batRotation = Math.PI / 2 * facing;
-                    // Shockwave
-                    ctx.save();
-                    ctx.strokeStyle = '#fff';
-                    ctx.lineWidth = 4;
-                    ctx.beginPath();
-                    ctx.arc(h1x, h1y, 50 + (progress - 0.35) * 200, 0, Math.PI * 2);
-                    ctx.stroke();
-                    ctx.restore();
+                } else if (direction === 'right' || (direction === 'left' && facing === 1)) {
+                    // === ATTAQUE VERS LA DROITE : DEMI-CERCLE ===
+                    if (progress < 0.25) {
+                        // Wind up : reculer
+                        const t = progress / 0.25;
+                        h1x3D = (25 - 20 * t) * facing;
+                        h1y3D = 10 - 10 * t;
+                        h1z3D = -5 * t;
+                        batRotation = (-Math.PI / 4 - Math.PI / 2 * t) * facing;
+                    } else if (progress < 0.4) {
+                        // SMASH : demi-cercle de gauche à droite
+                        const t = (progress - 0.25) / 0.15;
+                        const swing = 1 - Math.pow(1 - t, 3);
+                        const startAngle = -Math.PI / 2;
+                        const endAngle = Math.PI / 2;
+                        const angle = startAngle + (swing * (endAngle - startAngle));
+                        const radius = 70;
+                        h1x3D = radius * Math.cos(angle) * facing;
+                        h1y3D = radius * Math.sin(angle);
+                        h1z3D = -5 + (swing * 10);
+                        batRotation = (angle + Math.PI / 2) * facing;
+                        
+                        // Motion Swipe
+                        ctx.save();
+                        ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+                        ctx.lineWidth = 40;
+                        ctx.lineCap = 'round';
+                        ctx.beginPath();
+                        ctx.arc(0, 0, radius, startAngle, angle, false);
+                        ctx.stroke();
+                        ctx.restore();
+                    } else if (progress < 0.6) {
+                        // HOLD
+                        h1x3D = 40 * facing;
+                        h1y3D = 0;
+                        h1z3D = 5;
+                        batRotation = Math.PI / 2 * facing;
+                        // Shockwave
+                        const h1ProjTemp = this.projection3D.project(h1x3D, h1y3D, h1z3D);
+                        ctx.save();
+                        ctx.strokeStyle = '#fff';
+                        ctx.lineWidth = 4;
+                        ctx.beginPath();
+                        ctx.arc(h1ProjTemp.x, h1ProjTemp.y, 50 + ((progress - 0.4) / 0.2) * 200, 0, Math.PI * 2);
+                        ctx.stroke();
+                        ctx.restore();
+                    } else {
+                        // Recover
+                        const t = (progress - 0.6) / 0.4;
+                        h1x3D = (25 + 15 * (1 - t)) * facing;
+                        h1y3D = 10 * (1 - t);
+                        h1z3D = 5 * (1 - t);
+                        batRotation = (-Math.PI / 4) * facing;
+                    }
                 } else {
-                    // Recover
-                    h1x = 25 * facing;
-                    h1y = 10;
-                    batRotation = -Math.PI / 4 * facing;
+                    // === ATTAQUE VERS LA GAUCHE : DEMI-CERCLE SYMÉTRIQUE ===
+                    if (progress < 0.25) {
+                        // Wind up : reculer (symétrique)
+                        const t = progress / 0.25;
+                        h1x3D = (-25 + 20 * t) * facing; // Inverse de right
+                        h1y3D = 10 - 10 * t;
+                        h1z3D = -5 * t;
+                        batRotation = (-Math.PI / 4 + Math.PI / 2 * t) * facing; // Inverse
+                    } else if (progress < 0.4) {
+                        // SMASH : demi-cercle de droite à gauche
+                        const t = (progress - 0.25) / 0.15;
+                        const swing = 1 - Math.pow(1 - t, 3);
+                        const startAngle = Math.PI / 2;
+                        const endAngle = -Math.PI / 2;
+                        const angle = startAngle + (swing * (endAngle - startAngle));
+                        const radius = 70;
+                        h1x3D = radius * Math.cos(angle) * facing;
+                        h1y3D = radius * Math.sin(angle);
+                        h1z3D = -5 + (swing * 10);
+                        batRotation = (angle - Math.PI / 2) * facing; // Inverse
+                        
+                        // Motion Swipe (symétrique)
+                        ctx.save();
+                        ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+                        ctx.lineWidth = 40;
+                        ctx.lineCap = 'round';
+                        ctx.beginPath();
+                        ctx.arc(0, 0, radius, startAngle, angle, true); // Sens inverse
+                        ctx.stroke();
+                        ctx.restore();
+                    } else if (progress < 0.6) {
+                        // HOLD
+                        h1x3D = -40 * facing;
+                        h1y3D = 0;
+                        h1z3D = 5;
+                        batRotation = -Math.PI / 2 * facing;
+                        // Shockwave
+                        const h1ProjTemp = this.projection3D.project(h1x3D, h1y3D, h1z3D);
+                        ctx.save();
+                        ctx.strokeStyle = '#fff';
+                        ctx.lineWidth = 4;
+                        ctx.beginPath();
+                        ctx.arc(h1ProjTemp.x, h1ProjTemp.y, 50 + ((progress - 0.4) / 0.2) * 200, 0, Math.PI * 2);
+                        ctx.stroke();
+                        ctx.restore();
+                    } else {
+                        // Recover
+                        const t = (progress - 0.6) / 0.4;
+                        h1x3D = (-25 - 15 * (1 - t)) * facing;
+                        h1y3D = 10 * (1 - t);
+                        h1z3D = 5 * (1 - t);
+                        batRotation = (-Math.PI / 4) * facing;
+                    }
                 }
             } else {
                 delete this.playerAnims[id];
             }
         }
+        
+        // Appliquer rotation du corps si nécessaire
+        if (bodyRotationZ !== 0) {
+            ctx.rotate(bodyRotationZ);
+        }
+
+        // Projection 3D -> 2D pour les mains
+        const h1Proj = this.projection3D.project(h1x3D, h1y3D, h1z3D);
+        const h2Proj = this.projection3D.project(h2x3D, h2y3D, h2z3D);
 
         // Draw Hands
         ctx.fillStyle = p.color; // Solid neon color
         ctx.shadowBlur = 15;
 
-        // Back Hand
+        // Back Hand (projetée)
         ctx.beginPath();
-        ctx.arc(h2x, h2y, 8, 0, Math.PI * 2);
+        ctx.arc(h2Proj.x, h2Proj.y, 8, 0, Math.PI * 2);
         ctx.fill();
 
-        // Front Hand (Weapon Hand)
+        // Front Hand (Weapon Hand) - projetée
         ctx.save();
-        ctx.translate(h1x, h1y);
+        ctx.translate(h1Proj.x, h1Proj.y);
         ctx.rotate(batRotation);
 
         // BAT
@@ -771,6 +989,48 @@ export class Renderer {
 
             if (exp.age >= 1) {
                 explosions.splice(i, 1);
+            }
+        }
+    }
+
+    drawCombos(players) {
+        const ctx = this.ctx;
+        
+        for (const [id, p] of Object.entries(players)) {
+            const combo = this.comboSystem.getCombo(id);
+            if (combo && combo.level >= 2) {
+                // Afficher l'indicateur de combo au-dessus du joueur
+                const time = Date.now() / 200;
+                const pulse = 1 + Math.sin(time) * 0.2;
+                
+                ctx.save();
+                ctx.translate(p.x, p.y - 50);
+                
+                // Glow du combo
+                ctx.shadowBlur = 20 * pulse;
+                ctx.shadowColor = combo.color;
+                ctx.fillStyle = combo.color;
+                ctx.font = `bold ${20 + combo.level * 5}px Orbitron`;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(`${combo.count}x ${combo.name}`, 0, 0);
+                
+                // Particules autour du combo
+                for (let i = 0; i < combo.level * 2; i++) {
+                    const angle = (time * 2 + (i / combo.level) * Math.PI * 2) % (Math.PI * 2);
+                    const dist = 30 + Math.sin(time * 3 + i) * 10;
+                    ctx.fillStyle = combo.color;
+                    ctx.globalAlpha = 0.6;
+                    ctx.beginPath();
+                    ctx.arc(
+                        Math.cos(angle) * dist,
+                        Math.sin(angle) * dist,
+                        3, 0, Math.PI * 2
+                    );
+                    ctx.fill();
+                }
+                ctx.globalAlpha = 1;
+                ctx.restore();
             }
         }
     }

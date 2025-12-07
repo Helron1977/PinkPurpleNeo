@@ -7,6 +7,7 @@
     <title>PinkPurple: Neon Drift</title>
     <link rel="stylesheet" href="style.css">
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/zdog@1/dist/zdog.dist.min.js"></script>
 </head>
 
 <body>
@@ -21,8 +22,8 @@
 
             <div class="join-section">
                 <input type="text" id="room-code-input" placeholder="CODE" maxlength="5">
-                <button id="join-btn" class="neon-btn" style="border-color: var(--secondary-color);">JOIN</button>
             </div>
+            <button id="join-btn" class="neon-btn" style="border-color: var(--secondary-color); margin-top: 10px;">JOIN</button>
 
             <p id="lobby-status" style="color: #ff0055; min-height: 24px; font-weight: bold; margin-top: 10px;"></p>
         </div>
@@ -34,7 +35,7 @@
             <!-- Top Bar: Controls Hint & Room Info -->
             <div
                 style="position: absolute; top: 20px; width: 100%; display: flex; justify-content: center; pointer-events: none;">
-                <div id="controls-hint">
+            <div id="controls-hint">
                     <div class="key"><span>← → ↑</span> MOVE</div>
                     <div class="key"><span>↓</span> SLAM</div>
                     <div class="key"><span>SPACE</span> ATTACK</div>
@@ -54,8 +55,8 @@
             <!-- Touch Controls (Mobile/Tablet) -->
             <div id="touch-controls">
                 <div class="left-controls">
-                    <div id="joystick-zone">
-                        <div id="joystick-knob"></div>
+                <div id="joystick-zone">
+                    <div id="joystick-knob"></div>
                     </div>
                 </div>
                 <div id="action-buttons">
