@@ -51,9 +51,19 @@ export class NetworkManager {
             this.emit('error', msg);
         });
 
-        // Binary state updates
+        // Binary state updates (full state)
         this.socket.on('state_bin', (buf) => {
             this.decodeBinaryState(buf);
+            this.emit('state_updated', {
+                players: this.players,
+                scores: this.currentScores,
+                grenades: this.grenades
+            });
+        });
+
+        // Delta state updates (positions only)
+        this.socket.on('state_delta', (buf) => {
+            this.decodeDeltaState(buf);
             this.emit('state_updated', {
                 players: this.players,
                 scores: this.currentScores,
@@ -142,6 +152,65 @@ export class NetworkManager {
         if (!this.players.p2) delete this.players.p2;
 
         // 3. Grenades
+        const grenadeCount = data[offset++];
+        this.grenades = [];
+        for (let i = 0; i < grenadeCount; i++) {
+            const gx = ((data[offset + 1] << 8) | data[offset]) / 10;
+            offset += 2;
+            const gy = ((data[offset + 1] << 8) | data[offset]) / 10;
+            offset += 2;
+            const age = data[offset++];
+
+            const gxSigned = gx > 32767 / 10 ? gx - 65536 / 10 : gx;
+            const gySigned = gy > 32767 / 10 ? gy - 65536 / 10 : gy;
+
+            this.grenades.push({
+                x: gxSigned,
+                y: gySigned,
+                age: age
+            });
+        }
+    }
+
+    // Decode delta state protocol (positions only)
+    decodeDeltaState(buf) {
+        const data = new Uint8Array(buf);
+        let offset = 0;
+
+        // Read flags
+        const flags = data[offset++];
+        const p1Included = (flags & 1) !== 0;
+        const p2Included = (flags & 2) !== 0;
+
+        // Update P1 position if included
+        if (p1Included && this.players.p1) {
+            const x = ((data[offset + 1] << 8) | data[offset]) / 10;
+            offset += 2;
+            const y = ((data[offset + 1] << 8) | data[offset]) / 10;
+            offset += 2;
+
+            const xSigned = x > 32767 / 10 ? x - 65536 / 10 : x;
+            const ySigned = y > 32767 / 10 ? y - 65536 / 10 : y;
+
+            this.players.p1.x = xSigned;
+            this.players.p1.y = ySigned;
+        }
+
+        // Update P2 position if included
+        if (p2Included && this.players.p2) {
+            const x = ((data[offset + 1] << 8) | data[offset]) / 10;
+            offset += 2;
+            const y = ((data[offset + 1] << 8) | data[offset]) / 10;
+            offset += 2;
+
+            const xSigned = x > 32767 / 10 ? x - 65536 / 10 : x;
+            const ySigned = y > 32767 / 10 ? y - 65536 / 10 : y;
+
+            this.players.p2.x = xSigned;
+            this.players.p2.y = ySigned;
+        }
+
+        // Grenades (always included if present)
         const grenadeCount = data[offset++];
         this.grenades = [];
         for (let i = 0; i < grenadeCount; i++) {

@@ -332,15 +332,21 @@ class GameRoom {
     }
 
     broadcastState() {
-        // BINARY PROTOCOL
-        // Schema:
-        // [0] P1 Score (Uint8)
-        // [1] P2 Score (Uint8)
-        // [2-7] P1 Data (6 bytes)
-        // [8-13] P2 Data (6 bytes)
-        // [14] Grenade Count (Uint8)
-        // [15+] Grenades (5 bytes each: X(2), Y(2), Age(1))
+        // DELTA COMPRESSION: Send full state every 10 frames, delta otherwise
+        if (!this.frameCounter) this.frameCounter = 0;
+        this.frameCounter++;
 
+        const sendFullState = (this.frameCounter % 10 === 0);
+
+        if (sendFullState) {
+            this.broadcastFullState();
+        } else {
+            this.broadcastDeltaState();
+        }
+    }
+
+    broadcastFullState() {
+        // BINARY PROTOCOL - FULL STATE
         const grenadeCount = this.grenades.length;
         const bufferSize = 2 + 6 + 6 + 1 + (grenadeCount * 5);
         const buf = Buffer.alloc(bufferSize);
@@ -354,30 +360,23 @@ class GameRoom {
         const writePlayer = (pid) => {
             const p = this.players[pid];
             if (!p) {
-                // Active flag = 0
                 buf.writeUInt8(0, offset);
                 offset += 6;
                 return;
             }
 
-            // Flags: Bit 0 (Active), Bit 1 (IsHit), Bits 2-3 (GrenadeCount), Bit 4 (Facing), Bit 5 (VictoryStance)
             let flags = 1; // Active
             if (p.isHit) flags |= 2;
-            flags |= (p.grenadeCount & 0x03) << 2; // 2 bits for grenades (0-3)
-            if (p.lastFacing === 1) flags |= 16; // Bit 4: Facing (0=Left, 1=Right)
-            if (p.victoryStance) flags |= 32; // Bit 5: VictoryStance
+            flags |= (p.grenadeCount & 0x03) << 2;
+            if (p.lastFacing === 1) flags |= 16;
+            if (p.victoryStance) flags |= 32;
 
             buf.writeUInt8(flags, offset++);
             buf.writeUInt8(p.damage, offset++);
-
-            // Coordinates x10 for precision, stored as Int16
             buf.writeInt16LE(Math.round(p.x * 10), offset); offset += 2;
             buf.writeInt16LE(Math.round(p.y * 10), offset); offset += 2;
         };
 
-        // 2. Players (Always P1 then P2)
-        // We need to find the actual IDs for P1 and P2.
-        // The room stores players by socket ID, but the Player object has 'isPlayer1'
         let p1Id = null, p2Id = null;
         for (const id in this.players) {
             if (this.players[id].isPlayer1) p1Id = id;
@@ -387,7 +386,6 @@ class GameRoom {
         writePlayer(p1Id);
         writePlayer(p2Id);
 
-        // 3. Grenades
         buf.writeUInt8(grenadeCount, offset++);
         for (const g of this.grenades) {
             buf.writeInt16LE(Math.round(g.x * 10), offset); offset += 2;
@@ -395,7 +393,70 @@ class GameRoom {
             buf.writeUInt8(Math.min(255, g.age), offset++);
         }
 
+        // Save for delta comparison
+        this.lastState = {
+            p1: p1Id ? { x: this.players[p1Id].x, y: this.players[p1Id].y } : null,
+            p2: p2Id ? { x: this.players[p2Id].x, y: this.players[p2Id].y } : null
+        };
+
         this.io.to(this.id).emit('state_bin', buf);
+    }
+
+    broadcastDeltaState() {
+        // DELTA STATE: Only send positions that changed significantly (>5px)
+        let p1Id = null, p2Id = null;
+        for (const id in this.players) {
+            if (this.players[id].isPlayer1) p1Id = id;
+            else p2Id = id;
+        }
+
+        const p1 = p1Id ? this.players[p1Id] : null;
+        const p2 = p2Id ? this.players[p2Id] : null;
+
+        // Check if positions changed significantly
+        const p1Changed = p1 && this.lastState?.p1 &&
+            (Math.abs(p1.x - this.lastState.p1.x) > 5 || Math.abs(p1.y - this.lastState.p1.y) > 5);
+        const p2Changed = p2 && this.lastState?.p2 &&
+            (Math.abs(p2.x - this.lastState.p2.x) > 5 || Math.abs(p2.y - this.lastState.p2.y) > 5);
+
+        // If nothing changed significantly, don't send anything
+        if (!p1Changed && !p2Changed && this.grenades.length === 0) {
+            return;
+        }
+
+        // Compact delta format: [flags(1)] [p1_x(2)] [p1_y(2)] [p2_x(2)] [p2_y(2)] [grenades...]
+        const grenadeCount = this.grenades.length;
+        const bufferSize = 1 + (p1Changed ? 4 : 0) + (p2Changed ? 4 : 0) + 1 + (grenadeCount * 5);
+        const buf = Buffer.alloc(bufferSize);
+        let offset = 0;
+
+        // Flags: bit 0 = p1 included, bit 1 = p2 included
+        let flags = 0;
+        if (p1Changed) flags |= 1;
+        if (p2Changed) flags |= 2;
+        buf.writeUInt8(flags, offset++);
+
+        if (p1Changed) {
+            buf.writeInt16LE(Math.round(p1.x * 10), offset); offset += 2;
+            buf.writeInt16LE(Math.round(p1.y * 10), offset); offset += 2;
+            this.lastState.p1 = { x: p1.x, y: p1.y };
+        }
+
+        if (p2Changed) {
+            buf.writeInt16LE(Math.round(p2.x * 10), offset); offset += 2;
+            buf.writeInt16LE(Math.round(p2.y * 10), offset); offset += 2;
+            this.lastState.p2 = { x: p2.x, y: p2.y };
+        }
+
+        // Always include grenades if present
+        buf.writeUInt8(grenadeCount, offset++);
+        for (const g of this.grenades) {
+            buf.writeInt16LE(Math.round(g.x * 10), offset); offset += 2;
+            buf.writeInt16LE(Math.round(g.y * 10), offset); offset += 2;
+            buf.writeUInt8(Math.min(255, g.age), offset++);
+        }
+
+        this.io.to(this.id).emit('state_delta', buf);
     }
 }
 

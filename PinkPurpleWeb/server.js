@@ -78,7 +78,7 @@ setInterval(() => {
     }
 }, 1000 / PHYSICS_TICK_RATE);
 
-// Network Broadcast at 30Hz (saves bandwidth, sufficient for this game type)
+// Network Broadcast at 20Hz (optimized for bandwidth, still smooth)
 setInterval(() => {
     for (const roomId in rooms) {
         // Only broadcast if there are players in the room
@@ -86,7 +86,7 @@ setInterval(() => {
             rooms[roomId].broadcastState();
         }
     }
-}, 1000 / 30);
+}, 1000 / 20);
 
 io.on('connection', (socket) => {
     console.log('User connected:', socket.id);

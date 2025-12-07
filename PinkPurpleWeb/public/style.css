@@ -120,20 +120,17 @@ input[type="text"]:focus {
 
 .join-section {
     display: flex;
+    flex-direction: column;
     gap: 10px;
     width: 100%;
 }
 
 #room-code-input {
-    flex: 1;
-    min-width: 0;
-    /* Allow flex shrinking */
+    width: 100%;
 }
 
 #join-btn {
-    flex: 0 0 auto;
-    min-width: 120px;
-    /* Minimum width for button */
+    width: 100%;
     border-color: var(--secondary-color);
 }
 
