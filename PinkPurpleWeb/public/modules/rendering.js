@@ -34,7 +34,7 @@ export class Renderer {
 
         // Ragdoll system
         this.ragdollService = new RagdollClientService();
-        this.ragdollRenderer = new RagdollRenderer(this.ctx);
+        this.ragdollRenderer = new RagdollRenderer(this.ctx, networkManager, this);
 
         // Optimization: Off-screen canvas for obstacles
         this.obstaclesCanvas = document.createElement('canvas');
@@ -151,6 +151,9 @@ export class Renderer {
         // Cache frozen state for rendering during HitStop
         this.frozenPlayers = JSON.parse(JSON.stringify(state.players));
 
+        // Geler les ragdolls pendant le hit stop
+        this.ragdollService.startFreeze();
+
         // 1. FREEZE FRAME (Arrêt sur image) - Increased to 1.5s as requested
         this.hitStopDuration = 90; // 90 frames = 1.5s
         this.hitStopTimer = this.hitStopDuration;
@@ -219,6 +222,10 @@ export class Renderer {
     draw() {
         const { players, scores, grenades, explosions } = this.network.getState();
 
+        // Update ragdoll physics (client-side) - NE PAS UPDATE si hit stop actif
+        const isFrozen = this.hitStopTimer > 0;
+        this.ragdollService.update(isFrozen);
+
         // Shake decay
         if (this.shakeIntensity > 0) {
             this.shakeIntensity *= 0.9;
@@ -259,6 +266,9 @@ export class Renderer {
             this.ctx.filter = 'none';
             this.frameCounter++;
             this.frozenPlayers = null; // Clear freeze cache
+            
+            // Débloquer les ragdolls
+            this.ragdollService.stopFreeze();
 
             // Smoothly zoom out
             this.targetZoom = 1.0;
@@ -377,11 +387,9 @@ export class Renderer {
 
             // Initialiser ragdoll si nécessaire
             if (!this.ragdollService.getRagdollState(id)) {
-                this.ragdollService.createRagdoll(id);
+                const facingRight = (p.facing || 1) === 1;
+                this.ragdollService.createRagdoll(id, p.x, p.y, facingRight);
             }
-
-            // Mettre à jour état ragdoll depuis player state
-            this.ragdollService.updateFromPlayer(id, p);
 
             // Update trail
             if (!this.trails[id]) this.trails[id] = [];
@@ -410,19 +418,21 @@ export class Renderer {
             ctx.restore();
 
             // Décider du mode de rendu
-            const ragdollState = this.ragdollService.getRagdollState(id);
-            const useRagdoll = ragdollState && ragdollState.enabled;
-
-            if (useRagdoll) {
-                // Rendu ragdoll avec déformations
-                this.ragdollRenderer.drawRagdoll(ragdollState, {
+            const isFrozen = this.hitStopTimer > 0;
+            const ragdollState = this.ragdollService.getRagdollState(id, p, isFrozen);
+            const anim = this.playerAnims[id];
+            
+            // Utiliser ragdollRenderer pour TOUT le rendu (ragdoll ou normal)
+            this.ragdollRenderer.drawPlayer(
+                ragdollState,
+                { ...p, id },
+                {
                     color: p.color,
                     glowColor: p.color
-                });
-            } else {
-                // Rendu normal  (sphère + mains + batte)
-                this.drawPlayerModel(ctx, p, id);
-            }
+                },
+                anim,
+                ragdollState && ragdollState.enabled
+            );
         }
     }
 
@@ -962,6 +972,15 @@ export class Renderer {
             ctx.fillText(msg.text, msg.x, msg.y);
             ctx.restore();
         }
+    }
+
+    /**
+     * Active le ragdoll pour un joueur suite à un événement serveur
+     * @param {string} playerId - ID du joueur (ex: 'p1', 'p2')
+     * @param {Object} event - Événement ragdoll_start du serveur {impactAngle, force, x, y}
+     */
+    activateRagdoll(playerId, event) {
+        this.ragdollService.activateFromEvent(playerId, event);
     }
 
     start() {

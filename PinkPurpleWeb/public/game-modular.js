@@ -178,6 +178,15 @@ network.on('game_event', (event) => {
                 renderer.addFloatingDamage(players[event.target].x, players[event.target].y, event.damage || 10, '#ff8800');
             }
             break;
+
+        case 'ragdoll_start':
+            // Activer ragdoll avec calcul physique local
+            // event.player est 'p1' ou 'p2', on l'utilise directement comme clé
+            const playerId = event.player; // 'p1' ou 'p2'
+            if (players[playerId]) {
+                renderer.activateRagdoll(playerId, event);
+            }
+            break;
     }
 });
 

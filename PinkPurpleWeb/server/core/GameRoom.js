@@ -128,9 +128,12 @@ class GameRoom {
             const angleV1V2 = Math.atan2(dy, dx);
 
             // Geometric Hit Detection
+            // NOUVELLE APPROCHE: Le centre de la sphère est la hitbox
+            // La batte peut toucher n'importe où sur la sphère, mais le point d'impact détermine l'angle d'éjection
             const checkHit = (attacker, victim, dist, angleAttackToVictim) => {
-                // 1. Range Check: Player Radius (25) + Bat Reach (~100) = 125
-                if (dist > 140) return false; // Generous reach
+                // 1. Range Check: Distance entre les CENTRES des sphères
+                // Bat Reach (~100) + Player Radius (25) = 125, mais on utilise le centre
+                if (dist > 125) return false; // Portée de la batte
 
                 // 2. Angle Check (Cone)
                 // Attacker Facing: 0 (Right) or PI (Left)
@@ -146,54 +149,67 @@ class GameRoom {
                 return Math.abs(diff) < 1.2;
             };
 
+            // Calculer le point de contact réel sur la sphère de la victime
+            const calculateContactPoint = (attacker, victim, dist) => {
+                // Direction de l'attaquant vers la victime
+                const dx = victim.x - attacker.x;
+                const dy = victim.y - attacker.y;
+                const angleToVictim = Math.atan2(dy, dx);
+                
+                // Le point de contact est sur le bord de la sphère de la victime
+                // dans la direction de l'attaquant
+                const PLAYER_RADIUS = 25;
+                const contactX = victim.x - Math.cos(angleToVictim) * PLAYER_RADIUS;
+                const contactY = victim.y - Math.sin(angleToVictim) * PLAYER_RADIUS;
+                
+                return { x: contactX, y: contactY, angle: angleToVictim };
+            };
+
             // Priority check: did P1 hit P2?
             let p1HitP2 = false;
             if (p1.isHit && checkHit(p1, p2, dist, angleV1V2)) {
-                // IMPROVED EJECTION ANGLE CALCULATION
-                // L'animation de la batte fait un arc de cercle de bas en haut (facing right) 
-                // ou de haut en bas (facing left)
-                // L'angle d'éjection doit être perpendiculaire à la batte au moment de l'impact
-
-                const facing = p1.lastFacing; // 1 = right, -1 = left
-
-                // Position relative de la victime par rapport à l'attaquant
-                const relativeY = dy; // Positif si victime est en bas, négatif si en haut
-
-                // Calculer l'angle de la batte au moment de l'impact
-                // L'animation fait un arc: de -45° (repos) à +90° (impact) pour facing right
-                // Pour facing left, c'est l'inverse
-                let batSwingAngle;
-
-                if (facing === 1) {
-                    // Mouvement de gauche à droite: arc de bas en haut
-                    // Si victime en bas (relativeY > 0): batte à ~45° (bas-droite vers haut-droite)
-                    // Si victime en haut (relativeY < 0): batte à ~135° (haut-droite)
-                    batSwingAngle = Math.PI / 4 + (relativeY / dist) * (Math.PI / 3);
-                } else {
-                    // Mouvement de droite à gauche: arc de haut en bas
-                    // Si victime en haut (relativeY < 0): batte à ~45° (haut-gauche vers bas-gauche)
-                    // Si victime en bas (relativeY > 0): batte à ~-45° (bas-gauche)
-                    batSwingAngle = Math.PI - Math.PI / 4 - (relativeY / dist) * (Math.PI / 3);
-                }
-
-                // L'angle d'éjection est perpendiculaire à la batte (+ 90°)
-                const ejectionAngle = batSwingAngle;
+                // NOUVELLE APPROCHE: Calcul basé sur le point de contact réel
+                const contact = calculateContactPoint(p1, p2, dist);
+                
+                // L'angle d'éjection est la direction du point de contact vers le centre
+                // (perpendiculaire à la surface de la sphère au point de contact)
+                const ejectionAngle = contact.angle + Math.PI; // Direction opposée (de la surface vers l'extérieur)
+                
+                // Calculer la rotation basée sur où on a frappé
+                // Si on frappe sur le côté (pas au centre), on ajoute de la rotation
+                const facing = p1.lastFacing;
+                const relativeY = dy;
+                const hitOffset = relativeY / dist; // -1 à 1, 0 = centre
+                
+                // Rotation plus importante si on frappe sur les bords
+                const rotationFactor = Math.abs(hitOffset) * 0.3; // Plus on frappe loin du centre, plus ça tourne
+                const angularVelocity = (facing === 1 ? 1 : -1) * rotationFactor * p2.damage * 0.05;
 
                 p2.prepareEjection(ejectionAngle);
                 p1.enterVictoryStance();
                 p1.isHit = false;
 
-                // ACTIVER RAGDOLL pour P2
-                const contactPoint = {
-                    x: p2.x + Math.cos(ejectionAngle) * 25,
-                    y: p2.y + Math.sin(ejectionAngle) * 25
-                };
+                // ACTIVER RAGDOLL pour P2 avec rotation
                 this.ragdollService.applyImpact(
                     p2.id,
                     ejectionAngle,
                     p2.damage * 1.5,  // Force basée sur dégâts
-                    contactPoint
+                    contact,
+                    angularVelocity
                 );
+
+                // Envoyer événement au client pour calcul local
+                this.io.to(this.id).emit('event', {
+                    type: 'ragdoll_start',
+                    player: 'p2',
+                    impactAngle: ejectionAngle,
+                    force: p2.damage * 1.5,
+                    x: p2.x,
+                    y: p2.y,
+                    contactX: contact.x,
+                    contactY: contact.y,
+                    angularVelocity: angularVelocity
+                });
 
                 // CRITICAL FIX: P2 is stunned, so they CANNOT attack P1 back in this frame
                 p2.isHit = false;
@@ -212,41 +228,45 @@ class GameRoom {
             if (!p1HitP2 && p2.isHit) {
                 const angleV2V1 = Math.atan2(-dy, -dx);
                 if (checkHit(p2, p1, dist, angleV2V1)) {
-                    // IMPROVED EJECTION ANGLE CALCULATION (same logic as P1)
-                    const facing = p2.lastFacing; // 1 = right, -1 = left
-
-                    // Position relative de la victime par rapport à l'attaquant
+                    // NOUVELLE APPROCHE: Calcul basé sur le point de contact réel
+                    const contact = calculateContactPoint(p2, p1, dist);
+                    
+                    // L'angle d'éjection est la direction du point de contact vers le centre
+                    const ejectionAngle = contact.angle + Math.PI;
+                    
+                    // Calculer la rotation basée sur où on a frappé
+                    const facing = p2.lastFacing;
                     const relativeY = -dy; // Inverse car on regarde de P2 vers P1
-
-                    // Calculer l'angle de la batte au moment de l'impact
-                    let batSwingAngle;
-
-                    if (facing === 1) {
-                        // Mouvement de gauche à droite: arc de bas en haut
-                        batSwingAngle = Math.PI / 4 + (relativeY / dist) * (Math.PI / 3);
-                    } else {
-                        // Mouvement de droite à gauche: arc de haut en bas
-                        batSwingAngle = Math.PI - Math.PI / 4 - (relativeY / dist) * (Math.PI / 3);
-                    }
-
-                    // L'angle d'éjection est perpendiculaire à la batte
-                    const ejectionAngle = batSwingAngle;
+                    const hitOffset = relativeY / dist;
+                    
+                    const rotationFactor = Math.abs(hitOffset) * 0.3;
+                    const angularVelocity = (facing === 1 ? 1 : -1) * rotationFactor * p1.damage * 0.05;
 
                     p1.prepareEjection(ejectionAngle);
                     p2.enterVictoryStance();
                     p2.isHit = false;
 
-                    // ACTIVER RAGDOLL pour P1
-                    const contactPoint = {
-                        x: p1.x + Math.cos(ejectionAngle) * 25,
-                        y: p1.y + Math.sin(ejectionAngle) * 25
-                    };
+                    // ACTIVER RAGDOLL pour P1 avec rotation
                     this.ragdollService.applyImpact(
                         p1.id,
                         ejectionAngle,
                         p1.damage * 1.5,
-                        contactPoint
+                        contact,
+                        angularVelocity
                     );
+
+                    // Événement client
+                    this.io.to(this.id).emit('event', {
+                        type: 'ragdoll_start',
+                        player: 'p1',
+                        impactAngle: ejectionAngle,
+                        force: p1.damage * 1.5,
+                        x: p1.x,
+                        y: p1.y,
+                        contactX: contact.x,
+                        contactY: contact.y,
+                        angularVelocity: angularVelocity
+                    });
 
                     // CRITICAL FIX: P1 is stunned
                     p1.isHit = false;

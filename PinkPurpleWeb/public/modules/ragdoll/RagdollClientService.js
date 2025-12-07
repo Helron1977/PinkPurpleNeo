@@ -1,57 +1,128 @@
 /**
  * RagdollClientService
  * 
- * Service côté client pour gérer les états ragdoll
- * Gère l'interpolation et fournit les états pour le rendu
+ * Service côté client avec physique locale
+ * Ne reçoit que les triggers d'activation
  */
+
+import { ClientRagdollPhysics } from './ClientRagdollPhysics.js';
+import { ProceduralAnimator } from './ProceduralAnimator.js';
 
 export class RagdollClientService {
     constructor() {
-        this.ragdolls = new Map(); // playerId -> ragdoll state
+        this.physics = new ClientRagdollPhysics();
+        this.animator = new ProceduralAnimator();
+        this.lastUpdateTime = performance.now();
+        this.startTime = performance.now();
+        this.frozenRagdolls = new Map(); // Cache pour hit stop
+        this.isFrozen = false;
     }
 
-    createRagdoll(playerId) {
-        this.ragdolls.set(playerId, {
-            enabled: false,
-            core: { x: 0, y: 0, deformX: 1, deformY: 1, deformAngle: 0, rotation: 0 },
-            leftHand: { x: 0, y: 0 },
-            rightHand: { x: 0, y: 0 },
-            batAngle: 0
-        });
+    createRagdoll(playerId, x, y, facingRight) {
+        this.physics.createRagdoll(playerId, x, y, facingRight);
     }
 
-    updateFromPlayer(playerId, player) {
-        const ragdoll = this.ragdolls.get(playerId);
-        if (!ragdoll) return;
-
-        // Update positions from player (mode normal)
-        ragdoll.core.x = player.x;
-        ragdoll.core.y = player.y;
-        ragdoll.core.deformX = 1.0;
-        ragdoll.core.deformY = 1.0;
-        ragdoll.core.rotation = 0;
-
-        // Mains en position normale
-        const facing = player.facing || 1;
-        ragdoll.leftHand.x = player.x - 20 * facing;
-        ragdoll.leftHand.y = player.y + 10;
-        ragdoll.rightHand.x = player.x + 20 * facing;
-        ragdoll.rightHand.y = player.y + 10;
-        ragdoll.batAngle = facing === 1 ? -Math.PI / 4 : Math.PI + Math.PI / 4;
+    /**
+     * Active le ragdoll suite à un événement serveur
+     */
+    activateFromEvent(playerId, event) {
+        // event = {impactAngle, force, x, y, contactX, contactY, angularVelocity}
+        this.physics.activateRagdoll(
+            playerId,
+            event.impactAngle,
+            event.force,
+            event.x,
+            event.y,
+            event.angularVelocity || null,
+            event.contactX || null,
+            event.contactY || null
+        );
     }
 
-    getRagdollState(playerId) {
-        return this.ragdolls.get(playerId);
-    }
-
-    setEnabled(playerId, enabled) {
-        const ragdoll = this.ragdolls.get(playerId);
+    /**
+     * Gèle le ragdoll (pendant hit stop)
+     */
+    freezeRagdoll(playerId) {
+        const ragdoll = this.physics.getRagdollState(playerId);
         if (ragdoll) {
-            ragdoll.enabled = enabled;
+            this.frozenRagdolls.set(playerId, JSON.parse(JSON.stringify(ragdoll)));
         }
     }
 
+    /**
+     * Démarre le gel (hit stop)
+     */
+    startFreeze() {
+        this.isFrozen = true;
+        // Geler tous les ragdolls actifs (on doit les identifier autrement)
+        // On gèlera au moment où on les récupère dans getRagdollState
+    }
+
+    /**
+     * Arrête le gel (fin hit stop)
+     */
+    stopFreeze() {
+        this.isFrozen = false;
+        this.frozenRagdolls.clear();
+    }
+
+    /**
+     * Update physique locale (appelé chaque frame)
+     */
+    update(isFrozen = false) {
+        // Ne pas mettre à jour la physique si gelé
+        if (isFrozen) {
+            return;
+        }
+
+        const now = performance.now();
+        const deltaTime = (now - this.lastUpdateTime) / 1000;
+        this.lastUpdateTime = now;
+
+        this.physics.update(deltaTime);
+    }
+
+    /**
+     * Obtient l'état du ragdoll avec animations procédurales pour les poses
+     */
+    getRagdollState(playerId, playerState = null, isFrozen = false) {
+        // Si gelé, utiliser le cache
+        if (isFrozen && this.frozenRagdolls.has(playerId)) {
+            return this.frozenRagdolls.get(playerId);
+        }
+        
+        let ragdoll = this.physics.getRagdollState(playerId);
+        
+        if (!ragdoll) return null;
+
+        // Si gelé et ragdoll actif, le geler maintenant
+        if (isFrozen && ragdoll.enabled && !this.frozenRagdolls.has(playerId)) {
+            this.freezeRagdoll(playerId);
+            ragdoll = this.frozenRagdolls.get(playerId);
+        }
+
+        // Appliquer animations procédurales pour les poses (victory stance, stunned)
+        // SEULEMENT si le ragdoll n'est pas activé (pas de physique en cours)
+        if (!ragdoll.enabled && playerState && !isFrozen) {
+            const time = (performance.now() - this.startTime) / 1000;
+            const facing = playerState.facing || 1;
+            
+            // Victory stance
+            if (playerState.victoryStance) {
+                ragdoll = this.animator.generateVictoryPose(ragdoll, time, facing);
+            }
+            // Stunned (après un coup)
+            else if (playerState.isHit) {
+                const stunnedProgress = Math.min(1.0, (time % 1.5) / 1.5); // Cycle de 1.5 secondes
+                ragdoll = this.animator.generateStunnedPose(ragdoll, time, stunnedProgress);
+            }
+        }
+
+        return ragdoll;
+    }
+
     destroyRagdoll(playerId) {
-        this.ragdolls.delete(playerId);
+        this.physics.destroyRagdoll(playerId);
+        this.frozenRagdolls.delete(playerId);
     }
 }
