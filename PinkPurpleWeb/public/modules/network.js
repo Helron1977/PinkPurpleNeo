@@ -100,14 +100,15 @@ export class NetworkManager {
             const active = (flags & 1) !== 0;
 
             if (!active) {
-                offset += 5;
+                // If not active, no more data for this player
                 return null;
             }
 
             const isHit = (flags & 2) !== 0;
             const grenadeCount = (flags >> 2) & 0x03;
             const facing = (flags & 16) ? 1 : -1;
-            const victoryStance = (flags & 32) !== 0; // Bit 5: VictoryStance
+            const victoryStance = (flags & 32) !== 0;
+            const isRespawning = (flags & 64) !== 0;
             const damage = data[offset++];
 
             // Read coordinates (Int16LE, scaled by 10)
@@ -119,6 +120,32 @@ export class NetworkManager {
             // Convert to signed
             const xSigned = x > 32767 / 10 ? x - 65536 / 10 : x;
             const ySigned = y > 32767 / 10 ? y - 65536 / 10 : y;
+            
+            // Read Ability Flags
+            const abilityFlags = data[offset++];
+            
+            let threadActive = null;
+            if (abilityFlags & 1) {
+                const tx = ((data[offset + 1] << 8) | data[offset]) / 10;
+                offset += 2;
+                const ty = ((data[offset + 1] << 8) | data[offset]) / 10;
+                offset += 2;
+                const txSigned = tx > 32767 / 10 ? tx - 65536 / 10 : tx;
+                const tySigned = ty > 32767 / 10 ? ty - 65536 / 10 : ty;
+                threadActive = { x: txSigned, y: tySigned };
+            }
+            
+            let webActive = null;
+            if (abilityFlags & 2) {
+                const wx = ((data[offset + 1] << 8) | data[offset]) / 10;
+                offset += 2;
+                const wy = ((data[offset + 1] << 8) | data[offset]) / 10;
+                offset += 2;
+                const radius = data[offset++];
+                const wxSigned = wx > 32767 / 10 ? wx - 65536 / 10 : wx;
+                const wySigned = wy > 32767 / 10 ? wy - 65536 / 10 : wy;
+                webActive = { x: wxSigned, y: wySigned, radius, age: 0 }; // Age managed visually via radius mostly
+            }
 
             return {
                 x: xSigned,
@@ -128,6 +155,10 @@ export class NetworkManager {
                 grenadeCount: grenadeCount,
                 facing: facing,
                 victoryStance: victoryStance,
+                isRespawning: isRespawning,
+                sizeMultiplier: 1.0, // Sera mis à jour via événements
+                threadActive: threadActive,
+                webActive: webActive,
                 color: playerId === 'p1' ? GAME_CONFIG.PLAYER1_COLOR : GAME_CONFIG.PLAYER2_COLOR
             };
         };

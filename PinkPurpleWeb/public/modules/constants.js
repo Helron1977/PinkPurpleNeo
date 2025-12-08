@@ -40,8 +40,10 @@ export const CONTROLS = {
     RIGHT: ['ArrowRight', 'KeyD'],
     UP: ['ArrowUp', 'KeyW', 'KeyZ'],
     DOWN: ['ArrowDown', 'KeyS'],
-    SLAM: ['KeyE', 'ControlLeft'],
+    SLAM: ['KeyE'],
     HIT: ['Space'],
     DASH: ['ShiftLeft', 'ShiftRight'],
-    GRENADE: ['KeyG'],
+    GRENADE: ['Digit0', 'Numpad0'],
+    THREAD: ['ControlLeft', 'ControlRight'],
+    WEB: ['KeyC'],
 };

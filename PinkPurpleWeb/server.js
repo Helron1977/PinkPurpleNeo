@@ -143,9 +143,19 @@ io.on('connection', (socket) => {
             const player = rooms[roomId].players[rooms[roomId].players['p1']?.id === socket.id ? 'p1' : 'p2'];
             if (player) {
                 const result = player.applyInput(key);
-                if (result === 'attack') {
+                if (result && result.type === 'attack') {
                     // Emit swing event for visual animation (even on miss)
-                    io.to(roomId).emit('event', { type: 'swing', player: player.isPlayer1 ? 'p1' : 'p2' });
+                    io.to(roomId).emit('event', { 
+                        type: 'swing', 
+                        player: player.isPlayer1 ? 'p1' : 'p2',
+                        direction: result.direction
+                    });
+                } else if (result === 'thread') {
+                    // Thread lancé, sera géré dans GameRoom.updatePhysics
+                    io.to(roomId).emit('event', { type: 'thread_launch', player: player.isPlayer1 ? 'p1' : 'p2' });
+                } else if (result === 'web') {
+                    // Toile d'araignée lancée, sera gérée dans GameRoom.updatePhysics
+                    io.to(roomId).emit('event', { type: 'web_launch', player: player.isPlayer1 ? 'p1' : 'p2' });
                 } else if (result && result.type === 'grenade') {
                     // Create grenade
                     const grenade = new Grenade(result.x, result.y, result.vx, result.vy, player.id);

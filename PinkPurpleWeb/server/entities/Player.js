@@ -13,6 +13,24 @@ class Player {
         this.slamActiveTimer = 0;
         this.moveCooldown = 0;
         this.grenadeCount = 3;
+        // Système de combos
+        this.attackCombo = 0;
+        this.lastAction = null;
+        this.dashAttackCombo = false; // Dash suivi d'attaque
+        // Système de fil/grappin
+        this.threadCooldown = 0;
+        this.threadActive = null; // {x, y, vx, vy, age}
+        // Système de toile d'araignée (une par vie)
+        this.webAvailable = true;
+        this.webActive = null; // {x, y, radius, age}
+        // Effet de taille
+        this.sizeMultiplier = 1.0;
+        this.sizeEffectTimer = 0;
+        
+        // Direction de mouvement
+        this.lastMovement = 'horizontal'; // 'horizontal' ou 'up'
+        this.currentAttackDirection = 'horizontal'; // Stocke la direction de l'attaque en cours
+
         this.reset();
     }
 
@@ -24,6 +42,10 @@ class Player {
         this.pendingLaunch = null;
         this.victoryStance = false; // Add victoryStance init
         this.grenadeCount = 3;
+        // Respawn invincible et immobile
+        this.isRespawning = true;
+        this.respawnTimer = 180; // 3 secondes à 60 FPS
+        this.isInvincible = true;
         if (this.isPlayer1) {
             this.x = 100;
             this.y = 200;
@@ -35,16 +57,41 @@ class Player {
             this.x = 1820;
             this.y = 200;
             this.startX = 1820;
-            this.startY = 1200;
+            this.startY = 200;
             this.velocity = 0;
             this.angle = Math.PI / 2;
         }
         this.t = 0;
         this.isHit = false;
         this.lastFacing = 1;
+        // Reset combos et effets
+        this.attackCombo = 0;
+        this.lastAction = null;
+        this.dashAttackCombo = false;
+        this.threadActive = null;
+        this.threadCooldown = 0;
+        // La toile n'est PAS réinitialisée ici (seulement à chaque victoire)
+        // this.webAvailable reste false si elle a été utilisée
+        // this.webActive reste null
+        this.sizeMultiplier = 1.0;
+        this.sizeEffectTimer = 0;
+        this.lastMovement = 'horizontal';
     }
 
     update(obstacles) {
+        // RESPAWN: Immobile et invincible pendant 3 secondes ou jusqu'à mouvement
+        if (this.isRespawning) {
+            this.velocity = 0;
+            this.t = 0;
+            if (this.respawnTimer > 0) {
+                this.respawnTimer--;
+            } else {
+                this.isRespawning = false;
+                this.isInvincible = false;
+            }
+            return { dead: false, bounced: false };
+        }
+
         // VICTORY STANCE: Attacker floats until input
         if (this.victoryStance) {
             this.velocity = 0;
@@ -56,6 +103,43 @@ class Player {
         if (this.dashCooldown > 0) this.dashCooldown--;
         if (this.moveCooldown > 0) this.moveCooldown--;
         if (this.attackCooldown > 0) this.attackCooldown--;
+        if (this.threadCooldown > 0) this.threadCooldown--;
+        
+        // Update effet de taille
+        if (this.sizeEffectTimer > 0) {
+            this.sizeEffectTimer--;
+            if (this.sizeEffectTimer === 0) {
+                this.sizeMultiplier = 1.0;
+            }
+        }
+        
+        // Update fil/grappin
+        if (this.threadActive) {
+            this.threadActive.age++;
+            this.threadActive.x += this.threadActive.vx;
+            this.threadActive.y += this.threadActive.vy;
+            // Limite de portée
+            if (this.threadActive.age > 60 || 
+                this.threadActive.x < 0 || this.threadActive.x > WIDTH ||
+                this.threadActive.y < 0 || this.threadActive.y > HEIGHT) {
+                this.threadActive = null;
+            }
+        }
+        
+        // Update toile d'araignée
+        if (this.webActive) {
+            this.webActive.age++;
+            this.webActive.radius = Math.min(200, 50 + this.webActive.age * 2); // Grandit jusqu'à 200px
+            // La toile dure 10 secondes (600 frames)
+            if (this.webActive.age > 600) {
+                this.webActive = null;
+            }
+        }
+        
+        // Reset combo si trop de temps passe
+        if (this.attackCombo > 0 && this.lastAction !== 'HIT') {
+            this.attackCombo = 0;
+        }
 
         // Update slam attack timer (active hitbox for first 0.5s)
         if (this.slamActiveTimer > 0) {
@@ -137,7 +221,7 @@ class Player {
             this.y = this.startY;
         }
 
-        // Ground collision
+        // Ground collision avec rebond
         if (this.y > HEIGHT - 40) {
             this.y = HEIGHT - 40;
 
@@ -153,10 +237,11 @@ class Player {
                 let vy = Math.sin(this.angle) * this.velocity + GRAVITY * this.t;
                 let vx = Math.cos(this.angle) * this.velocity;
 
-                vy = -Math.abs(vy) * 0.6;
-                vx = vx * 0.8;
+                // Rebond plus prononcé
+                vy = -Math.abs(vy) * 0.75; // Augmenté de 0.6 à 0.75
+                vx = vx * 0.85; // Légèrement augmenté
 
-                if (Math.abs(vy) < 8 && Math.abs(vx) < 2) {
+                if (Math.abs(vy) < 5 && Math.abs(vx) < 2) {
                     this.velocity = 0;
                     this.angle = 0;
                 } else {
@@ -170,18 +255,79 @@ class Player {
             }
         }
 
-        if (this.x < -100 || this.x > WIDTH + 100 || this.y < -100) {
+        // Murs latéraux avec dégâts
+        const WALL_DAMAGE = 5;
+        const WALL_DAMAGE_THRESHOLD = 50; // Si dégâts >= 50, on peut sortir
+        const WALL_X_LEFT = 0;
+        const WALL_X_RIGHT = WIDTH;
+
+        if (this.x < WALL_X_LEFT + 25) {
+            // Mur gauche
+            if (!this.isInvincible && this.damage < WALL_DAMAGE_THRESHOLD) {
+                this.damage += WALL_DAMAGE;
+                this.x = WALL_X_LEFT + 25;
+                // Rebond
+                let vx = Math.cos(this.angle) * this.velocity;
+                let vy = Math.sin(this.angle) * this.velocity + GRAVITY * this.t;
+                vx = Math.abs(vx) * 0.7; // Rebond vers la droite
+                this.velocity = Math.sqrt(vx * vx + vy * vy);
+                this.angle = Math.atan2(vy, vx);
+                this.startX = this.x;
+                this.startY = this.y;
+                this.t = 0;
+            }
+        } else if (this.x > WALL_X_RIGHT - 25) {
+            // Mur droit
+            if (!this.isInvincible && this.damage < WALL_DAMAGE_THRESHOLD) {
+                this.damage += WALL_DAMAGE;
+                this.x = WALL_X_RIGHT - 25;
+                // Rebond
+                let vx = Math.cos(this.angle) * this.velocity;
+                let vy = Math.sin(this.angle) * this.velocity + GRAVITY * this.t;
+                vx = -Math.abs(vx) * 0.7; // Rebond vers la gauche
+                this.velocity = Math.sqrt(vx * vx + vy * vy);
+                this.angle = Math.atan2(vy, vx);
+                this.startX = this.x;
+                this.startY = this.y;
+                this.t = 0;
+            }
+        }
+
+        // Sortie de l'écran : seulement si trop de dégâts ou si on sort par le haut
+        if (this.y < -100) {
             return { dead: true, bounced: false };
+        }
+        // Sortie latérale : seulement si dégâts >= seuil
+        if (this.damage >= 50) {
+            if (this.x < -100 || this.x > WIDTH + 100) {
+                return { dead: true, bounced: false };
+            }
+        } else {
+            // Sinon, on reste bloqué aux murs
+            if (this.x < -100) this.x = 25;
+            if (this.x > WIDTH + 100) this.x = WIDTH - 25;
         }
 
         return { dead: false, bounced: collided };
     }
 
     applyInput(key) {
+        // WAKE UP from Respawn on any movement input
+        if (this.isRespawning) {
+            if (['LEFT', 'RIGHT', 'UP', 'DOWN', 'SLAM', 'DASH', 'HIT', 'GRENADE', 'THREAD'].includes(key)) {
+                this.isRespawning = false;
+                this.isInvincible = false;
+                this.respawnTimer = 0;
+            } else {
+                // Pendant le respawn, on ne peut pas bouger
+                return;
+            }
+        }
+
         // WAKE UP from Victory Stance on any input (except pure modifiers if any)
         // If movement key is pressed, we clear stance and process input
         if (this.victoryStance) {
-            if (['LEFT', 'RIGHT', 'UP', 'DOWN', 'SLAM', 'DASH', 'HIT', 'GRENADE'].includes(key)) {
+            if (['LEFT', 'RIGHT', 'UP', 'DOWN', 'SLAM', 'DASH', 'HIT', 'GRENADE', 'THREAD'].includes(key)) {
                 this.victoryStance = false;
             }
         }
@@ -195,7 +341,31 @@ class Player {
             this.isHit = true;
             this.activeHitboxTimer = 10;
             this.attackCooldown = 30;
-            return 'attack';
+            
+            // Gestion des combos
+            if (this.lastAction === 'HIT') {
+                this.attackCombo++;
+            } else {
+                this.attackCombo = 1;
+            }
+            this.lastAction = 'HIT';
+            
+            // Combo dash + attaque
+            if (this.dashAttackCombo) {
+                this.dashAttackCombo = false;
+                // Force d'éjection augmentée sera gérée dans GameRoom
+            }
+
+            // Déterminer la direction de l'attaque
+            let attackDir = 'horizontal';
+            if (this.lastMovement === 'up') {
+                attackDir = 'up';
+            } else {
+                attackDir = this.lastFacing === 1 ? 'right' : 'left';
+            }
+            this.currentAttackDirection = attackDir;
+            
+            return { type: 'attack', direction: attackDir };
         }
 
         if (key === 'GRENADE') {
@@ -227,9 +397,42 @@ class Player {
                 if (this.lastFacing === 1) this.angle = Math.PI;
                 else this.angle = 0;
                 this.dashCooldown = 60;
+                this.lastAction = 'DASH';
+                this.dashAttackCombo = true; // Prochain hit sera un combo
                 return 'dash';
             }
             return;
+        }
+
+        if (key === 'THREAD') {
+            if (this.threadCooldown > 0) return;
+            // Lancer le fil depuis la main opposée
+            const threadSpeed = 15;
+            const threadAngle = this.lastFacing === 1 ? 0 : Math.PI; // Direction opposée à la batte
+            this.threadActive = {
+                x: this.x + Math.cos(threadAngle) * 30,
+                y: this.y + Math.sin(threadAngle) * 30,
+                vx: Math.cos(threadAngle) * threadSpeed,
+                vy: Math.sin(threadAngle) * threadSpeed,
+                age: 0
+            };
+            this.threadCooldown = 120; // 2 secondes
+            this.lastAction = 'THREAD';
+            return 'thread';
+        }
+
+        if (key === 'WEB') {
+            if (!this.webAvailable || this.webActive) return; // Une seule toile par vie
+            // Créer la toile d'araignée à la position actuelle
+            this.webActive = {
+                x: this.x,
+                y: this.y,
+                radius: 50,
+                age: 0
+            };
+            this.webAvailable = false; // Utilisée, ne peut plus être utilisée cette vie
+            this.lastAction = 'WEB';
+            return 'web';
         }
 
         this.t = 0;
@@ -240,25 +443,31 @@ class Player {
         if (key === 'LEFT') {
             this.angle = Math.PI / 3;
             this.lastFacing = -1;
+            this.lastMovement = 'horizontal';
         }
         else if (key === 'RIGHT') {
             this.angle = 2 * Math.PI / 3;
             this.lastFacing = 1;
+            this.lastMovement = 'horizontal';
         }
-        else if (key === 'UP') this.angle = Math.PI / 2;
+        else if (key === 'UP') {
+            this.angle = Math.PI / 2;
+            this.lastMovement = 'up';
+        }
         else if (key === 'DOWN') {
             this.angle = -Math.PI / 2;
             this.velocity = -50;
+            this.lastMovement = 'horizontal';
         }
     }
 
-    prepareEjection(angleFromAttacker) {
+    prepareEjection(angleFromAttacker, comboMultiplier = 1.0) {
         this.isHit = false;
         this.isAttacking = false;
         this.activeHitboxTimer = 0;
 
         this.damage += 10;
-        const force = 25 + (this.damage * 1.2);
+        const force = (25 + (this.damage * 1.2)) * comboMultiplier;
 
         let vy = Math.sin(angleFromAttacker);
         let vx = Math.cos(angleFromAttacker);

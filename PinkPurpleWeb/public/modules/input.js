@@ -49,6 +49,8 @@ export class InputManager {
         if (CONTROLS.HIT.includes(code)) return 'HIT';
         if (CONTROLS.DASH.includes(code)) return 'DASH';
         if (CONTROLS.GRENADE.includes(code)) return 'GRENADE';
+        if (CONTROLS.THREAD && CONTROLS.THREAD.includes(code)) return 'THREAD';
+        if (CONTROLS.WEB && CONTROLS.WEB.includes(code)) return 'WEB';
         return null;
     }
 

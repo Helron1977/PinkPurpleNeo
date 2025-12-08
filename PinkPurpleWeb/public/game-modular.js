@@ -178,6 +178,32 @@ network.on('game_event', (event) => {
                 renderer.addFloatingDamage(players[event.target].x, players[event.target].y, event.damage || 10, '#ff8800');
             }
             break;
+
+        case 'thread_hit':
+            if (players[event.to]) {
+                renderer.addFloatingText(players[event.to].x, players[event.to].y, 'ENERGY DRAIN!', '#00ffff');
+            }
+            // Mettre à jour les effets de taille persistants
+            if (event.fromSize !== undefined) {
+                renderer.playerRenderer.addSizeEffect(event.from, event.fromSize, 300);
+            }
+            if (event.toSize !== undefined) {
+                renderer.playerRenderer.addSizeEffect(event.to, event.toSize, 300);
+            }
+            break;
+
+        case 'web_hit':
+            if (players[event.to]) {
+                renderer.addFloatingText(players[event.to].x, players[event.to].y, 'TRAPPED!', '#ff00ff');
+            }
+            break;
+
+        case 'victory_animation':
+            renderer.victoryAnimation = {
+                player: event.player,
+                startTime: Date.now()
+            };
+            break;
     }
 });
 

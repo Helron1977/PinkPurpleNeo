@@ -18,18 +18,42 @@ class GameRoom {
 
     generateObstacles() {
         this.obstacles = [];
-        for (let i = 0; i < 15; i++) {
+        const centerX = WIDTH / 2;
+        
+        // Génération symétrique : 7 obstacles de chaque côté
+        const leftObstacles = [];
+        for (let i = 0; i < 7; i++) {
+            const x = Math.random() * (centerX - 300) + 100;
+            const y = Math.random() * (HEIGHT - 200) + 100;
+            const w = 50 + Math.random() * 100;
+            const h = 100 + Math.random() * 200;
+            leftObstacles.push({ x, y, w, h });
+        }
+        
+        // Filtrer pour éviter les zones de spawn
+        const filteredLeft = leftObstacles.filter(o => {
+            const p1Safe = (o.x + o.w < 50 || o.x > 250 || o.y + o.h < 150 || o.y > 350);
+            return p1Safe;
+        });
+        
+        // Créer les obstacles symétriques à droite
+        for (const obs of filteredLeft) {
+            // Ajouter l'obstacle gauche
+            this.obstacles.push(obs);
+            // Ajouter l'obstacle droit (symétrique)
+            const rightX = WIDTH - (obs.x + obs.w);
             this.obstacles.push({
-                x: Math.random() * (WIDTH - 200) + 100,
-                y: Math.random() * (HEIGHT - 200) + 100,
-                w: 50 + Math.random() * 100,
-                h: 100 + Math.random() * 200,
+                x: rightX,
+                y: obs.y,
+                w: obs.w,
+                h: obs.h
             });
         }
+        
+        // Filtrer pour éviter les zones de spawn P2
         this.obstacles = this.obstacles.filter(o => {
-            const p1Safe = (o.x + o.w < 50 || o.x > 250 || o.y + o.h < 150 || o.y > 350);
             const p2Safe = (o.x + o.w < 1750 || o.x > 1950 || o.y + o.h < 150 || o.y > 350);
-            return p1Safe && p2Safe;
+            return p2Safe;
         });
     }
 
@@ -71,6 +95,9 @@ class GameRoom {
         const p2 = this.players['p2'];
 
         if (p1 && p2) {
+            // Threads et Webs sont maintenant dans le binaire broadcastState
+            // Plus besoin d'envoyer des événements 'thread_update' ou 'web_update'
+            
             const p1Status = p1.update(this.obstacles);
             const p2Status = p2.update(this.obstacles);
 
@@ -85,6 +112,9 @@ class GameRoom {
             if (p1Status.dead) {
                 this.scores.p2++;
                 p1.reset();
+                // Réinitialiser la toile d'araignée du gagnant à chaque victoire
+                p2.webAvailable = true;
+                p2.webActive = null;
                 this.io.to(this.id).emit('score', this.scores);
                 const deathEvent = { type: 'death', player: 'p1' };
                 this.io.to(this.id).emit('event', deathEvent);
@@ -94,6 +124,9 @@ class GameRoom {
             if (p2Status.dead) {
                 this.scores.p1++;
                 p2.reset();
+                // Réinitialiser la toile d'araignée du gagnant à chaque victoire
+                p1.webAvailable = true;
+                p1.webActive = null;
                 this.io.to(this.id).emit('score', this.scores);
                 const deathEvent = { type: 'death', player: 'p2' };
                 this.io.to(this.id).emit('event', deathEvent);
@@ -131,7 +164,7 @@ class GameRoom {
                 // CALCUL ANGLE D'ÉJECTION basé sur la direction réelle de la batte
                 // Utiliser lastAction pour déterminer la direction de l'attaque
                 let batAngle;
-                if (p1.lastAction === 'UP') {
+                if (p1.currentAttackDirection === 'up') {
                     // Attaque vers le haut : angle vertical vers le haut
                     batAngle = -Math.PI / 2; // Vers le haut
                     // Ajuster légèrement selon la position relative
@@ -147,9 +180,18 @@ class GameRoom {
                 }
                 const ejectionAngle = batAngle;
                 
-                p2.prepareEjection(ejectionAngle); // Prepare Launch avec angle corrigé
+                // Calcul du multiplicateur de combo
+                let comboMultiplier = 1.0;
+                if (p1.attackCombo >= 2) {
+                    comboMultiplier = 2.0; // Attaque*2 = sortie possible
+                } else if (p1.dashAttackCombo) {
+                    comboMultiplier = 1.8; // Dash+attaque = sortie possible
+                }
+                
+                p2.prepareEjection(ejectionAngle, comboMultiplier); // Prepare Launch avec angle corrigé et combo
                 p1.enterVictoryStance(); // ATTACKER FLOATS
                 p1.isHit = false; // Consume hit
+                p1.dashAttackCombo = false; // Reset combo
 
                 // CRITICAL FIX: P2 is stunned, so they CANNOT attack P1 back in this frame
                 p2.isHit = false;
@@ -170,7 +212,7 @@ class GameRoom {
                 if (checkHit(p2, p1, dist, angleV2V1)) {
                     // CALCUL ANGLE D'ÉJECTION basé sur la direction réelle de la batte
                     let batAngle;
-                    if (p2.lastAction === 'UP') {
+                    if (p2.currentAttackDirection === 'up') {
                         // Attaque vers le haut : angle vertical vers le haut
                         batAngle = -Math.PI / 2; // Vers le haut
                         // Ajuster légèrement selon la position relative
@@ -184,9 +226,18 @@ class GameRoom {
                     }
                     const ejectionAngle = batAngle;
                     
-                    p1.prepareEjection(ejectionAngle); // Prepare Launch avec angle corrigé
+                    // Calcul du multiplicateur de combo
+                    let comboMultiplier = 1.0;
+                    if (p2.attackCombo >= 2) {
+                        comboMultiplier = 2.0; // Attaque*2 = sortie possible
+                    } else if (p2.dashAttackCombo) {
+                        comboMultiplier = 1.8; // Dash+attaque = sortie possible
+                    }
+                    
+                    p1.prepareEjection(ejectionAngle, comboMultiplier); // Prepare Launch avec angle corrigé et combo
                     p2.enterVictoryStance(); // ATTACKER FLOATS
                     p2.isHit = false; // Consume hit
+                    p2.dashAttackCombo = false; // Reset combo
 
                     // CRITICAL FIX: P1 is stunned
                     p1.isHit = false;
@@ -198,6 +249,78 @@ class GameRoom {
                     const hitEvent = { type: 'hit', from: 'p2', to: 'p1', damage: p1.damage };
                     this.io.to(this.id).emit('event', hitEvent);
                     this.botCallbacks.onEvent(this.id, hitEvent);
+                }
+            }
+
+            // Détection collision fil/grappin
+            if (p1.threadActive) {
+                const dx = p2.x - p1.threadActive.x;
+                const dy = p2.y - p1.threadActive.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                if (dist < 30) {
+                    // Touché ! Effet de taille
+                    p2.sizeMultiplier = 0.85; // Victime plus petite
+                    p2.sizeEffectTimer = 300; // 5 secondes
+                    p1.sizeMultiplier = 1.15; // Attaquant plus gros
+                    p1.sizeEffectTimer = 300; // 5 secondes
+                    p1.threadActive = null;
+                    this.io.to(this.id).emit('event', { 
+                        type: 'thread_hit', 
+                        from: 'p1', 
+                        to: 'p2',
+                        fromSize: 1.15,
+                        toSize: 0.85
+                    });
+                }
+            }
+            if (p2.threadActive) {
+                const dx = p1.x - p2.threadActive.x;
+                const dy = p1.y - p2.threadActive.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                if (dist < 30) {
+                    // Touché ! Effet de taille
+                    p1.sizeMultiplier = 0.85; // Victime plus petite
+                    p1.sizeEffectTimer = 300; // 5 secondes
+                    p2.sizeMultiplier = 1.15; // Attaquant plus gros
+                    p2.sizeEffectTimer = 300; // 5 secondes
+                    p2.threadActive = null;
+                    this.io.to(this.id).emit('event', { 
+                        type: 'thread_hit', 
+                        from: 'p2', 
+                        to: 'p1',
+                        fromSize: 1.15,
+                        toSize: 0.85
+                    });
+                }
+            }
+            
+            // Détection collision toile d'araignée
+            if (p1.webActive) {
+                const dx = p2.x - p1.webActive.x;
+                const dy = p2.y - p1.webActive.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                if (dist < p1.webActive.radius + 25) { // Rayon + rayon joueur
+                    // Touché par la toile ! Ralentissement
+                    p2.moveCooldown = Math.max(p2.moveCooldown, 180); // 3 secondes de ralentissement
+                    this.io.to(this.id).emit('event', { 
+                        type: 'web_hit', 
+                        from: 'p1', 
+                        to: 'p2'
+                    });
+                }
+            }
+            if (p2.webActive) {
+                const dx = p1.x - p2.webActive.x;
+                const dy = p1.y - p2.webActive.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                if (dist < p2.webActive.radius + 25) { // Rayon + rayon joueur
+                    // Touché par la toile ! Ralentissement
+                    p1.moveCooldown = Math.max(p1.moveCooldown, 180); // 3 secondes de ralentissement
+                    this.io.to(this.id).emit('event', { 
+                        type: 'web_hit', 
+                        from: 'p2', 
+                        to: 'p1'
+                    });
                 }
             }
         }
@@ -301,6 +424,18 @@ class GameRoom {
 
         if (this.scores.p1 >= 10 || this.scores.p2 >= 10) {
             const winner = this.scores.p1 >= 10 ? 'p1' : 'p2';
+            const winnerPlayer = this.players[winner];
+            
+            // Animation de victoire centrée sur le gagnant
+            if (winnerPlayer) {
+                this.io.to(this.id).emit('event', { 
+                    type: 'victory_animation', 
+                    player: winner,
+                    x: winnerPlayer.x,
+                    y: winnerPlayer.y
+                });
+            }
+            
             this.io.to(this.id).emit('game_over', { winner: winner });
 
             // Notifier les bots de la fin de partie pour l'apprentissage
@@ -321,13 +456,27 @@ class GameRoom {
         // Schema:
         // [0] P1 Score (Uint8)
         // [1] P2 Score (Uint8)
-        // [2-7] P1 Data (6 bytes)
-        // [8-13] P2 Data (6 bytes)
-        // [14] Grenade Count (Uint8)
-        // [15+] Grenades (5 bytes each: X(2), Y(2), Age(1))
+        // [2-?] P1 Data
+        // [?-?] P2 Data
+        // [?] Grenade Count (Uint8)
+        // [?+] Grenades
+
+        // Calcul dynamique de la taille du buffer
+        // Base per player: 1 (Flags) + 1 (Damage) + 4 (Pos) = 6 bytes
+        // + New: 1 (AbilityFlags)
+        // + Thread: 4 bytes (X, Y) if active
+        // + Web: 5 bytes (X, Y, Radius) if active
+        
+        let p1Size = 7;
+        if (this.players['p1'] && this.players['p1'].threadActive) p1Size += 4;
+        if (this.players['p1'] && this.players['p1'].webActive) p1Size += 5;
+
+        let p2Size = 7;
+        if (this.players['p2'] && this.players['p2'].threadActive) p2Size += 4;
+        if (this.players['p2'] && this.players['p2'].webActive) p2Size += 5;
 
         const grenadeCount = this.grenades.length;
-        const bufferSize = 2 + 6 + 6 + 1 + (grenadeCount * 5);
+        const bufferSize = 2 + p1Size + p2Size + 1 + (grenadeCount * 5);
         const buf = Buffer.alloc(bufferSize);
         let offset = 0;
 
@@ -341,28 +490,64 @@ class GameRoom {
             if (!p) {
                 // Active flag = 0
                 buf.writeUInt8(0, offset);
-                offset += 6;
+                // Skip the rest of the fixed size block (AbilityFlags included in skip logic? No, just skip main block)
+                // Actually, if inactive, we just write 0 and client knows to skip?
+                // Client expects fixed structure? Let's assume inactive player takes 1 byte (0) and we handle logic on client
+                // BUT current client logic expects fixed offset skip. We need to be careful.
+                // Let's keep the active flag = 0 but write generic empty data to maintain simpler parsing if possible,
+                // OR better: Client reads flag, if 0, skips fixed amount.
+                // For dynamic parts (thread/web), if player inactive, they don't exist.
+                
+                // Let's rewrite:
+                // Flags (1)
+                // If Flags & 1 (Active):
+                //   Read Damage (1)
+                //   Read Pos (4)
+                //   Read AbilityFlags (1)
+                //   If AbilityFlags & 1 (Thread): Read ThreadPos (4)
+                //   If AbilityFlags & 2 (Web): Read WebPosRadius (5)
+                
+                offset++; // Advance past the 0 flag
                 return;
             }
 
-            // Flags: Bit 0 (Active), Bit 1 (IsHit), Bits 2-3 (GrenadeCount), Bit 4 (Facing), Bit 5 (VictoryStance)
+            // Flags: Bit 0 (Active), Bit 1 (IsHit), Bits 2-3 (GrenadeCount), Bit 4 (Facing), Bit 5 (VictoryStance), Bit 6 (IsRespawning)
             let flags = 1; // Active
             if (p.isHit) flags |= 2;
-            flags |= (p.grenadeCount & 0x03) << 2; // 2 bits for grenades (0-3)
-            if (p.lastFacing === 1) flags |= 16; // Bit 4: Facing (0=Left, 1=Right)
-            if (p.victoryStance) flags |= 32; // Bit 5: VictoryStance
+            flags |= (p.grenadeCount & 0x03) << 2;
+            if (p.lastFacing === 1) flags |= 16;
+            if (p.victoryStance) flags |= 32;
+            if (p.isRespawning) flags |= 64;
 
             buf.writeUInt8(flags, offset++);
             buf.writeUInt8(p.damage, offset++);
 
-            // Coordinates x10 for precision, stored as Int16
+            // Coordinates x10
             buf.writeInt16LE(Math.round(p.x * 10), offset); offset += 2;
             buf.writeInt16LE(Math.round(p.y * 10), offset); offset += 2;
+            
+            // Ability Flags
+            let abilityFlags = 0;
+            if (p.threadActive) abilityFlags |= 1;
+            if (p.webActive) abilityFlags |= 2;
+            buf.writeUInt8(abilityFlags, offset++);
+            
+            // Thread Data
+            if (p.threadActive) {
+                buf.writeInt16LE(Math.round(p.threadActive.x * 10), offset); offset += 2;
+                buf.writeInt16LE(Math.round(p.threadActive.y * 10), offset); offset += 2;
+            }
+            
+            // Web Data
+            if (p.webActive) {
+                buf.writeInt16LE(Math.round(p.webActive.x * 10), offset); offset += 2;
+                buf.writeInt16LE(Math.round(p.webActive.y * 10), offset); offset += 2;
+                buf.writeUInt8(Math.min(255, p.webActive.radius), offset++);
+            }
         };
 
         // 2. Players (Always P1 then P2)
-        // We need to find the actual IDs for P1 and P2.
-        // The room stores players by socket ID, but the Player object has 'isPlayer1'
+        // Need ID mapping
         let p1Id = null, p2Id = null;
         for (const id in this.players) {
             if (this.players[id].isPlayer1) p1Id = id;
