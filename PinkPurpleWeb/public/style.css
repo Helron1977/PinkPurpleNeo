@@ -17,8 +17,13 @@ body {
     display: flex;
     justify-content: center;
     align-items: center;
+    /* Utiliser env() pour gérer les barres de navigation Android */
     height: 100vh;
+    height: 100dvh; /* Dynamic viewport height pour mobile */
+    min-height: -webkit-fill-available; /* iOS Safari */
     touch-action: none;
+    /* Masquer les barres de navigation Android */
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
 }
 
 /* --- UI Containers (Glassmorphism) --- */
@@ -254,21 +259,52 @@ input[type="text"]:focus {
     /* Clicks pass through to zone */
 }
 
-/* === RIGHT CONTROLS: Action Buttons === */
+/* === RIGHT CONTROLS: Action Joystick === */
 #action-buttons {
     display: flex;
-    flex-direction: column;
-    gap: min(2vmin, 15px);
     align-items: flex-end;
     justify-content: flex-end;
     flex-shrink: 0;
 }
 
-/* Primary row: Main actions */
-#action-buttons>div {
+#action-joystick-zone {
+    /* Même style que le joystick de gauche */
+    width: clamp(120px, 20vmin, 180px);
+    height: clamp(120px, 20vmin, 180px);
+    background: rgba(255, 0, 85, 0.05);
+    border: 2px solid rgba(255, 0, 85, 0.3);
+    border-radius: 50%;
+    position: relative;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    transition: all 0.2s ease;
+    box-shadow: 0 0 20px rgba(255, 0, 85, 0.1);
+}
+
+#action-joystick-zone:active,
+#action-joystick-zone.active {
+    background: rgba(255, 0, 85, 0.1);
+    border-color: rgba(255, 0, 85, 0.6);
+    box-shadow: 0 0 30px rgba(255, 0, 85, 0.3);
+}
+
+#action-joystick-knob {
+    width: 40%;
+    height: 40%;
+    background: radial-gradient(circle, rgba(255, 0, 85, 0.8), rgba(255, 0, 85, 0.4));
+    border: 2px solid rgba(255, 255, 255, 0.5);
+    border-radius: 50%;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    box-shadow: 0 0 20px rgba(255, 0, 85, 0.8), inset 0 0 10px rgba(255, 255, 255, 0.3);
+    transition: transform 0.1s ease-out;
+    pointer-events: none;
     display: flex;
-    gap: min(2vmin, 15px);
-    align-items: flex-end;
+    align-items: center;
+    justify-content: center;
+    font-size: clamp(1.2rem, 3vmin, 2rem);
 }
 
 /* Base button style */

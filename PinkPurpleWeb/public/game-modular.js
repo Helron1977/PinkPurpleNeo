@@ -113,6 +113,7 @@ network.on('joined_room', (data) => {
     if (audioCtx.state === 'suspended') audioCtx.resume();
     // Music is already playing from lobby
 
+
     // Start rendering
     renderer.start();
 });

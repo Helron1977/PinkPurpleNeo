@@ -176,30 +176,33 @@ export class Renderer {
         const shake = this.effectRenderer.updateShake();
         this.playerRenderer.update(this.frameCounter);
 
-        // Clear
+        // Clear (TOUJOURS sans filter pour éviter les bugs de couleur)
         this.ctx.setTransform(1, 0, 0, 1, 0, 0);
+        this.ctx.filter = 'none'; // S'assurer que le clear n'est jamais affecté par un filter
         this.ctx.fillStyle = COLORS.BACKGROUND;
         this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
         // Hit Stop Logic
         let renderPlayers = players;
+        let useInvertFilter = false;
         if (this.hitStopTimer > 0) {
             this.hitStopTimer--;
             if (this.frozenPlayers) renderPlayers = this.frozenPlayers;
             
+            // Activer le filter seulement pour les 5 premières frames du hit stop
             if (this.hitStopTimer > this.hitStopDuration - 5) {
-                this.ctx.filter = 'invert(1) contrast(2)';
-            } else {
-                this.ctx.filter = 'none';
+                useInvertFilter = true;
             }
             this.targetZoom = 2.5;
         } else {
-            this.ctx.filter = 'none';
             this.frameCounter++;
             this.frozenPlayers = null;
             this.targetZoom = 1.0;
             this.slowMotionFactor = 1.0;
         }
+        
+        // S'assurer que le filter est réinitialisé avant les transformations
+        this.ctx.filter = 'none';
 
         // Camera Logic
         // Intro Override
@@ -246,7 +249,24 @@ export class Renderer {
         
         this.playerRenderer.drawThreads(players); // Threads behind players? Or front?
         this.playerRenderer.drawWebs(players);
-        this.playerRenderer.drawPlayers(renderPlayers, this.network.getState());
+        
+        // Appliquer le filter d'inversion uniquement aux joueurs pendant le hit stop
+        // IMPORTANT: Toujours restaurer le filter après utilisation pour éviter les bugs sur tablette
+        if (useInvertFilter) {
+            this.ctx.save();
+            this.ctx.filter = 'invert(1) contrast(2)';
+            this.playerRenderer.drawPlayers(renderPlayers, this.network.getState());
+            this.ctx.restore();
+            // Double sécurité : forcer le filter à 'none' après restore
+            this.ctx.filter = 'none';
+        } else {
+            // S'assurer que le filter est toujours 'none' même quand on ne l'utilise pas
+            this.ctx.filter = 'none';
+            this.playerRenderer.drawPlayers(renderPlayers, this.network.getState());
+        }
+        
+        // Garantir que le filter est réinitialisé après le dessin des joueurs
+        this.ctx.filter = 'none';
         
         this.drawGrenades(grenades); // Keep simple logic here or move to EffectRenderer? Keep simple for now.
         
@@ -268,6 +288,11 @@ export class Renderer {
                 this.announcement = null;
             }
         }
+        
+        // CRITIQUE: Toujours réinitialiser le filter à la fin de chaque frame
+        // Certaines tablettes Android peuvent avoir des bugs où le filter persiste
+        this.ctx.setTransform(1, 0, 0, 1, 0, 0);
+        this.ctx.filter = 'none';
 
         // Victory Animation
         if (this.victoryAnimation) {

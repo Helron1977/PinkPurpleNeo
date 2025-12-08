@@ -1,0 +1,12 @@
+{
+  "name": "PinkPurple: Neon Drift",
+  "short_name": "PinkPurple",
+  "description": "Neon Drift - Action Game",
+  "start_url": "/",
+  "display": "fullscreen",
+  "background_color": "#000000",
+  "theme_color": "#000000",
+  "orientation": "any",
+  "icons": []
+}
+

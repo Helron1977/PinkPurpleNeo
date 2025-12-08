@@ -3,11 +3,70 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#000000">
     <title>PinkPurple: Neon Drift</title>
+    <link rel="manifest" href="manifest.json">
     <link rel="stylesheet" href="style.css">
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
     <script src="https://unpkg.com/zdog@1/dist/zdog.dist.min.js"></script>
+    <script>
+        // Forcer le mode plein écran sur mobile/tablette
+        (function() {
+            // Masquer les barres de navigation Android
+            function hideAndroidBars() {
+                // Masquer la barre d'adresse sur mobile
+                if (window.innerHeight !== window.screen.height) {
+                    window.scrollTo(0, 1);
+                }
+                
+                // Forcer le plein écran si l'API est disponible
+                if (document.documentElement.requestFullscreen) {
+                    document.documentElement.requestFullscreen().catch(() => {});
+                } else if (document.documentElement.webkitRequestFullscreen) {
+                    document.documentElement.webkitRequestFullscreen();
+                } else if (document.documentElement.mozRequestFullScreen) {
+                    document.documentElement.mozRequestFullScreen();
+                } else if (document.documentElement.msRequestFullscreen) {
+                    document.documentElement.msRequestFullscreen();
+                }
+            }
+            
+            // Essayer immédiatement
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', hideAndroidBars);
+            } else {
+                hideAndroidBars();
+            }
+            
+            // Réessayer après un court délai (pour certains navigateurs)
+            setTimeout(hideAndroidBars, 500);
+            
+            // Réessayer après interaction utilisateur (certains navigateurs nécessitent une interaction)
+            document.addEventListener('touchstart', function once() {
+                hideAndroidBars();
+                document.removeEventListener('touchstart', once);
+            }, { once: true });
+            
+            // Gérer le changement d'orientation
+            window.addEventListener('orientationchange', function() {
+                setTimeout(hideAndroidBars, 100);
+            });
+            
+            // Prévenir le zoom sur double-tap
+            let lastTouchEnd = 0;
+            document.addEventListener('touchend', function(event) {
+                const now = Date.now();
+                if (now - lastTouchEnd <= 300) {
+                    event.preventDefault();
+                }
+                lastTouchEnd = now;
+            }, false);
+        })();
+    </script>
 </head>
 
 <body>
@@ -60,11 +119,8 @@
                     </div>
                 </div>
                 <div id="action-buttons">
-                    <button id="btn-grenade" class="touch-btn small-btn">💣</button>
-                    <div style="display: flex; gap: 15px; align-items: flex-end;">
-                        <button id="btn-dash" class="touch-btn" id="btn-dash">⚡</button>
-                        <button id="btn-attack" class="touch-btn big-btn">⚔️</button>
-                        <button id="btn-slam" class="touch-btn slam-btn">⬇️</button>
+                    <div id="action-joystick-zone">
+                        <div id="action-joystick-knob">⚔️</div>
                     </div>
                 </div>
             </div>
