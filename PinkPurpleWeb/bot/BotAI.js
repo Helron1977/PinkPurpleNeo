@@ -120,10 +120,62 @@ class BotAI {
     }
 
     /**
-     * Vérifie si un mouvement va causer une collision avec un obstacle
+     * Vérifie si une position est sûre (dans les limites, pas trop haut)
+     */
+    isSafePosition(x, y, margin = 50) {
+        // Vérifier les limites de l'écran avec marge
+        if (x < PLAYER_RADIUS + margin || x > WIDTH - PLAYER_RADIUS - margin) {
+            return false; // Trop près des bords latéraux
+        }
+        if (y < PLAYER_RADIUS + margin) {
+            return false; // Trop haut (risque de sortir)
+        }
+        if (y > HEIGHT - 40 - PLAYER_RADIUS) {
+            return false; // Sous le sol
+        }
+        return true;
+    }
+
+    /**
+     * Simule un mouvement et retourne la position finale après plusieurs frames
+     * Utile pour voir où le bot atterrit après plusieurs mouvements
+     */
+    simulateMovement(startX, startY, velocity, angle, maxFrames = 60) {
+        let x = startX;
+        let y = startY;
+        const vx = Math.cos(angle) * velocity;
+        const vy = Math.sin(angle) * velocity;
+        let t = 0;
+
+        for (let frame = 0; frame < maxFrames; frame++) {
+            t += T_INC;
+            x = startX + vx * t;
+            y = startY + vy * t + 0.5 * GRAVITY * t * t;
+
+            // Arrêt au sol
+            if (y > HEIGHT - 40) {
+                y = HEIGHT - 40;
+                break;
+            }
+
+            // Arrêt si on sort de l'écran
+            if (x < PLAYER_RADIUS || x > WIDTH - PLAYER_RADIUS || y < PLAYER_RADIUS) {
+                break;
+            }
+        }
+
+        return { x, y, isSafe: this.isSafePosition(x, y) };
+    }
+
+    /**
+     * Vérifie si un mouvement va causer une collision avec un obstacle ou sortir de l'écran
      */
     wouldCollideWithObstacle(startX, startY, velocity, angle, maxTime = 2.0) {
-        if (!this.room || !this.room.obstacles) return false;
+        if (!this.room || !this.room.obstacles) {
+            // Même sans obstacles, vérifier les limites
+            const sim = this.simulateMovement(startX, startY, velocity, angle, Math.floor(maxTime / T_INC));
+            return !sim.isSafe;
+        }
 
         // Simuler la trajectoire
         let t = 0;
@@ -137,8 +189,8 @@ class BotAI {
             const y = startY + vy * t + 0.5 * GRAVITY * t * t;
 
             // Vérifier les limites de l'écran
-            if (x < PLAYER_RADIUS || x > WIDTH - PLAYER_RADIUS || y < PLAYER_RADIUS) {
-                return true; // Collision avec les bords
+            if (!this.isSafePosition(x, y, 30)) {
+                return true; // Collision avec les bords ou position dangereuse
             }
 
             // Vérifier collision avec obstacles
@@ -150,7 +202,9 @@ class BotAI {
             }
         }
 
-        return false;
+        // Vérifier la position finale après simulation
+        const sim = this.simulateMovement(startX, startY, velocity, angle, Math.floor(maxTime / T_INC));
+        return !sim.isSafe;
     }
 
     /**
@@ -220,34 +274,46 @@ class BotAI {
             // Utiliser la vision pour déterminer les directions libres
             const useVision = vision && vision.directions;
 
-            // LEFT
+            // LEFT - Vérifier que ça ne fait pas sortir de l'écran
             if (dx < 0) {
                 const leftAngle = Math.PI / 3; // 60° up-left
+                // Simuler plusieurs mouvements pour voir où on atterrit
+                const sim = this.simulateMovement(me.x, me.y, -50, leftAngle, 60);
                 const isClear = useVision ? vision.directions.left > 100 :
                     !this.wouldCollideWithObstacle(me.x, me.y, -50, leftAngle);
-                if (isClear) {
+                // Ne pas aller à gauche si on est déjà trop à gauche ou si ça nous fait sortir
+                if (isClear && sim.isSafe && me.x > PLAYER_RADIUS + 100) {
                     actions.push('LEFT');
                 }
             }
 
-            // RIGHT
+            // RIGHT - Vérifier que ça ne fait pas sortir de l'écran
             if (dx > 0) {
                 const rightAngle = 2 * Math.PI / 3; // 120° up-right
+                const sim = this.simulateMovement(me.x, me.y, -50, rightAngle, 60);
                 const isClear = useVision ? vision.directions.right > 100 :
                     !this.wouldCollideWithObstacle(me.x, me.y, -50, rightAngle);
-                if (isClear) {
+                // Ne pas aller à droite si on est déjà trop à droite ou si ça nous fait sortir
+                if (isClear && sim.isSafe && me.x < WIDTH - PLAYER_RADIUS - 100) {
                     actions.push('RIGHT');
                 }
             }
 
-            // UP
-            if (dy < 0 && me.y > 150) { // Don't go too high (ceiling limit)
+            // UP - Seulement si on n'est pas trop haut et si on ne sort pas
+            if (dy < 0 && me.y > 200) { // Plus strict: ne pas monter si déjà trop haut
                 const upAngle = Math.PI / 2; // 90° straight up
+                const sim = this.simulateMovement(me.x, me.y, -50, upAngle, 60);
                 const isClear = useVision ? vision.directions.up > 100 :
                     !this.wouldCollideWithObstacle(me.x, me.y, -50, upAngle);
-                if (isClear) {
+                // Ne pas monter si ça nous fait sortir par le haut
+                if (isClear && sim.isSafe && sim.y > PLAYER_RADIUS + 50) {
                     actions.push('UP');
                 }
+            }
+            
+            // DOWN - Si on est trop haut, descendre devient prioritaire
+            if (me.y < 300) { // Si on est trop haut, on peut descendre
+                actions.push('DOWN');
             }
 
             // SLAM
@@ -348,7 +414,16 @@ class BotAI {
             }
         }
 
-        // 4. Se rapprocher de l'adversaire (en utilisant la vision pour éviter les obstacles)
+        // 4. PRIORITÉ: Si on est trop haut, descendre d'abord
+        if (me.y < 250 && me.moveCooldown === 0) {
+            // Si on est trop haut, descendre devient prioritaire pour éviter de sortir
+            const sim = this.simulateMovement(me.x, me.y, -50, -Math.PI / 2, 60);
+            if (sim.isSafe) {
+                return 'DOWN';
+            }
+        }
+
+        // 5. Se rapprocher de l'adversaire (en utilisant la vision pour éviter les obstacles)
         if (distance > ATTACK_RANGE && me.moveCooldown === 0) {
             // 40% de chance d'attendre au lieu de spammer
             if (Math.random() < 0.4) {
@@ -359,24 +434,27 @@ class BotAI {
             const targetAngle = Math.atan2(dy, dx);
             const bestAngle = this.vision.getBestDirection(me.x, me.y, targetAngle);
 
-            // Convertir l'angle en action
+            // Convertir l'angle en action (avec vérification de sécurité)
             const angleDiff = Math.abs(bestAngle - targetAngle);
             if (angleDiff < Math.PI / 6) { // Proche de la direction cible
                 if (Math.abs(dx) > Math.abs(dy)) {
                     // Mouvement horizontal
-                    if (dx > 0) {
-                        if (this.vision.isPathClear(me.x, me.y, me.x + 100, me.y, 50)) {
+                    if (dx > 0 && me.x < WIDTH - PLAYER_RADIUS - 100) {
+                        const sim = this.simulateMovement(me.x, me.y, -50, 2 * Math.PI / 3, 60);
+                        if (this.vision.isPathClear(me.x, me.y, me.x + 100, me.y, 50) && sim.isSafe) {
                             return 'RIGHT';
                         }
-                    } else {
-                        if (this.vision.isPathClear(me.x, me.y, me.x - 100, me.y, 50)) {
+                    } else if (dx < 0 && me.x > PLAYER_RADIUS + 100) {
+                        const sim = this.simulateMovement(me.x, me.y, -50, Math.PI / 3, 60);
+                        if (this.vision.isPathClear(me.x, me.y, me.x - 100, me.y, 50) && sim.isSafe) {
                             return 'LEFT';
                         }
                     }
                 } else {
                     // Mouvement vertical
-                    if (dy < 0) {
-                        if (this.vision.isPathClear(me.x, me.y, me.x, me.y - 100, 50)) {
+                    if (dy < 0 && me.y > 200) {
+                        const sim = this.simulateMovement(me.x, me.y, -50, Math.PI / 2, 60);
+                        if (this.vision.isPathClear(me.x, me.y, me.x, me.y - 100, 50) && sim.isSafe && sim.y > PLAYER_RADIUS + 50) {
                             return 'UP';
                         }
                     } else {
@@ -387,13 +465,22 @@ class BotAI {
                     }
                 }
             } else {
-                // Suivre la direction libre la plus proche
+                // Suivre la direction libre la plus proche (avec vérification de sécurité)
                 if (bestAngle < Math.PI / 4 || bestAngle > 7 * Math.PI / 4) {
-                    return 'RIGHT';
+                    if (me.x < WIDTH - PLAYER_RADIUS - 100) {
+                        const sim = this.simulateMovement(me.x, me.y, -50, 2 * Math.PI / 3, 60);
+                        if (sim.isSafe) return 'RIGHT';
+                    }
                 } else if (bestAngle > 3 * Math.PI / 4 && bestAngle < 5 * Math.PI / 4) {
-                    return 'LEFT';
+                    if (me.x > PLAYER_RADIUS + 100) {
+                        const sim = this.simulateMovement(me.x, me.y, -50, Math.PI / 3, 60);
+                        if (sim.isSafe) return 'LEFT';
+                    }
                 } else if (bestAngle > Math.PI / 4 && bestAngle < 3 * Math.PI / 4) {
-                    return 'UP';
+                    if (me.y > 200) {
+                        const sim = this.simulateMovement(me.x, me.y, -50, Math.PI / 2, 60);
+                        if (sim.isSafe && sim.y > PLAYER_RADIUS + 50) return 'UP';
+                    }
                 }
             }
         }

@@ -121,6 +121,33 @@ class BotLearning {
     calculateReward(event, me, enemy, previousState) {
         let reward = 0;
         
+        // PÉNALITÉ MASSIVE pour sortir de l'écran ou être trop près des bords
+        const WIDTH = 1920;
+        const HEIGHT = 1080;
+        const PLAYER_RADIUS = 25;
+        const SAFE_MARGIN = 100;
+        
+        // Vérifier si le bot est dans une zone dangereuse
+        if (me.x < PLAYER_RADIUS + SAFE_MARGIN || me.x > WIDTH - PLAYER_RADIUS - SAFE_MARGIN) {
+            reward -= 20; // Trop près des bords latéraux
+        }
+        if (me.y < PLAYER_RADIUS + SAFE_MARGIN) {
+            reward -= 30; // Trop haut (risque de sortir)
+        }
+        if (me.y > HEIGHT - 40 - PLAYER_RADIUS) {
+            reward -= 10; // Sous le sol (normalement impossible, mais sécurité)
+        }
+        
+        // Pénalité pour sortir de l'écran (détecté via l'événement death)
+        if (event.type === 'death' && event.player === me.id) {
+            // Vérifier si c'était à cause d'une sortie d'écran
+            if (me.x < -50 || me.x > WIDTH + 50 || me.y < -50) {
+                reward -= 100; // Pénalité massive pour sortir de l'écran
+            } else {
+                reward -= 50; // Mort normale
+            }
+        }
+        
         // Récompenses positives
         if (event.type === 'hit' && event.from === me.id) {
             reward += 10; // Hit réussi
@@ -138,9 +165,6 @@ class BotLearning {
         }
         if (event.type === 'grenade_hit' && event.target === me.id) {
             reward -= 10; // Touché par grenade
-        }
-        if (event.type === 'death' && event.player === me.id) {
-            reward -= 50; // Mort
         }
         
         // Récompense pour se rapprocher de l'adversaire (si action de mouvement)
