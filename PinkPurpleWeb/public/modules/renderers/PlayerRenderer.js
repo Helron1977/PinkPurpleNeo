@@ -137,29 +137,69 @@ export class PlayerRenderer {
         ctx.scale(1 + stretch, 1 - stretch);
         ctx.rotate(-angle);
 
-        // --- 2. NEON BODY ---
+        // --- 2. NEON + TOON BODY ---
         const r = GAME_CONFIG.PLAYER_RADIUS;
         const bodyColor = p.victoryStance ? '#ffd700' : p.color;
         const glowColor = p.victoryStance ? '#ffd700' : p.color;
 
-        ctx.shadowBlur = 0;
+        // A. Contour Noir (Stroke)
+        ctx.shadowBlur = 0; // Pas de flou sur le contour interne
+        ctx.lineWidth = 4;
+        ctx.strokeStyle = '#000000';
+        ctx.beginPath();
+        ctx.arc(0, 0, r, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // B. Remplissage Solide (Fill) + Glow Externe simulé
+        // Pour le glow externe, on dessine d'abord un cercle flou derrière
+        ctx.save();
+        ctx.globalCompositeOperation = 'destination-over'; // Dessiner derrière
+        ctx.shadowBlur = p.victoryStance ? 40 : 25;
+        ctx.shadowColor = glowColor;
         ctx.fillStyle = bodyColor;
-        ctx.globalAlpha = p.victoryStance ? 0.4 : 0.2;
+        ctx.beginPath();
+        ctx.arc(0, 0, r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+
+        // Remplissage principal (opaque)
+        ctx.fillStyle = bodyColor;
         ctx.beginPath();
         ctx.arc(0, 0, r, 0, Math.PI * 2);
         ctx.fill();
 
-        ctx.globalAlpha = 1.0;
-        ctx.lineWidth = 3;
-        ctx.strokeStyle = isGlitching ? '#ffffff' : '#ffffff';
-        ctx.shadowColor = glowColor;
-        ctx.shadowBlur = p.victoryStance ? 30 : 20;
-        ctx.stroke();
+        // C. Ombre "Toon" (Crescent)
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(0, 0, r, 0, Math.PI * 2);
+        ctx.clip(); // Restreindre à la sphère
+        
+        ctx.translate(-r * 0.3, r * 0.3); // Décalage de l'ombre (bas-gauche)
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.4)'; // Ombre noire semi-transparente
+        ctx.beginPath();
+        ctx.arc(0, 0, r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
 
+        // D. Reflet "Toon" (Highlight blanc net) - REMOVED TO FIX ARTIFACTS
+        // Le cercle "ovale" était perçu comme un œil en trop. On le retire pour un style plus "Flat/BD".
+        /*
+        ctx.fillStyle = '#ffffff';
         ctx.shadowBlur = 0;
-        ctx.strokeStyle = bodyColor;
-        ctx.lineWidth = p.victoryStance ? 2 : 1;
-        ctx.stroke();
+        ctx.beginPath();
+        // Ovale en haut à droite
+        ctx.ellipse(r * 0.4, -r * 0.4, r * 0.25, r * 0.15, -Math.PI / 4, 0, Math.PI * 2);
+        ctx.fill();
+        */
+
+        // E. Contour "Glitch" (si applicable)
+        if (isGlitching) {
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = '#ffffff';
+            ctx.beginPath();
+            ctx.arc(0, 0, r + 2, 0, Math.PI * 2);
+            ctx.stroke();
+        }
 
         // --- 3. FACE & EYES ---
         this.drawFace(ctx, p, id, networkState, anim, isStunned);
@@ -177,7 +217,11 @@ export class PlayerRenderer {
         const opponentId = id === 'p1' ? 'p2' : 'p1';
         const opponent = networkState.players && networkState.players[opponentId];
 
-        let eyeOffsetX = (facing === 1) ? 3 : -3;
+        // LOGIC YEUX DE PROFIL
+        // Si facing = 1 (droite), oeil droit visible, oeil gauche caché
+        // Si facing = -1 (gauche), oeil gauche visible, oeil droit caché
+        // MAIS on veut voir l'oeil "avant" principalement
+        
         let lookX = 0, lookY = 0;
         
         if (opponent) {
@@ -189,7 +233,6 @@ export class PlayerRenderer {
         }
 
         if (p.victoryStance) {
-            // Happy bounce
             const bounce = Math.abs(Math.sin(Date.now() / 150)) * 5;
             ctx.translate(0, -bounce);
         }
@@ -201,44 +244,30 @@ export class PlayerRenderer {
             ctx.lineWidth = 3;
             ctx.strokeStyle = '#fff';
             ctx.shadowBlur = 5;
-            
-            // ^ ^ Eyes
+            // ^ ^ Eyes (toujours visibles en face en victoire ?)
+            // Disons que victoire = face caméra
             ctx.beginPath(); ctx.moveTo(-15, -5); ctx.lineTo(-10, -10); ctx.lineTo(-5, -5); ctx.stroke();
             ctx.beginPath(); ctx.moveTo(5, -5); ctx.lineTo(10, -10); ctx.lineTo(15, -5); ctx.stroke();
             eyeScaleY = 0;
         } else if (isStunned) {
-            // X X Eyes
+            // X X Eyes (Face camera pour effet comique)
             ctx.lineWidth = 3;
             ctx.strokeStyle = '#ffff00';
             ctx.shadowBlur = 5;
-            
-            ctx.beginPath(); 
-            ctx.moveTo(-18, -8); ctx.lineTo(-8, -2);
-            ctx.moveTo(-18, -2); ctx.lineTo(-8, -8);
-            ctx.stroke();
-
-            ctx.beginPath(); 
-            ctx.moveTo(8, -8); ctx.lineTo(18, -2);
-            ctx.moveTo(8, -2); ctx.lineTo(18, -8);
-            ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(-18, -8); ctx.lineTo(-8, -2); ctx.moveTo(-18, -2); ctx.lineTo(-8, -8); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(8, -8); ctx.lineTo(18, -2); ctx.moveTo(8, -2); ctx.lineTo(18, -8); ctx.stroke();
             
             // Birds/Stars spinning above head
             const time = Date.now() / 200;
             for(let i=0; i<3; i++) {
                 const angle = time + (i * (Math.PI * 2 / 3));
                 const rx = Math.cos(angle) * 30;
-                const ry = Math.sin(angle) * 10; // Elliptical path
-                
-                // 3D projection for stars
-                const proj = this.projection3D.project(rx, -40 + ry, 0); // Above head
-                
+                const ry = Math.sin(angle) * 10;
+                const proj = this.projection3D.project(rx, -40 + ry, 0);
                 ctx.fillStyle = '#ffff00';
                 ctx.shadowBlur = 10;
-                ctx.beginPath();
-                ctx.arc(proj.x, proj.y, 4, 0, Math.PI * 2);
-                ctx.fill();
+                ctx.beginPath(); ctx.arc(proj.x, proj.y, 4, 0, Math.PI * 2); ctx.fill();
             }
-
             eyeScaleY = 0;
         } else if (anim && anim.type === 'bat_swing') {
             const direction = anim.direction || (facing === 1 ? 'right' : 'left');
@@ -252,15 +281,35 @@ export class PlayerRenderer {
         }
 
         if (eyeScaleY > 0) {
+            // YEUX DE PROFIL
+            // On dessine l'oeil "coté direction" plus grand et plus centré
+            // L'autre oeil est soit caché soit sur le bord
+            
             ctx.fillStyle = '#fff';
             ctx.shadowBlur = 10;
-            ctx.shadowColor = '#fff';
-            const leftEyeX = -15 + eyeOffsetX + lookX * 0.3;
-            const rightEyeX = 15 + eyeOffsetX + lookX * 0.3;
-            const eyeY = -5 + lookY * 0.3;
+            ctx.shadowColor = '#fff'; // Glow blanc pour les yeux (pas de contour noir moche)
             
-            ctx.beginPath(); ctx.ellipse(leftEyeX, eyeY, 6, 6 * eyeScaleY, 0, 0, Math.PI * 2); ctx.fill();
-            ctx.beginPath(); ctx.ellipse(rightEyeX, eyeY, 6, 6 * eyeScaleY, 0, 0, Math.PI * 2); ctx.fill();
+            if (facing === 1) { // Regarde à Droite
+                // Oeil Droit (Visible)
+                const rightEyeX = 15 + lookX * 0.3; // Décalé vers la droite
+                const eyeY = -5 + lookY * 0.3;
+                
+                // Forme amande/ovale
+                ctx.beginPath(); 
+                ctx.ellipse(rightEyeX, eyeY, 8, 8 * eyeScaleY, 0, 0, Math.PI * 2); 
+                ctx.fill();
+                
+                // Oeil Gauche (Caché ou petit sur le bord gauche du nez)
+                // On ne le dessine pas en vrai profil strict
+            } else { // Regarde à Gauche
+                // Oeil Gauche (Visible)
+                const leftEyeX = -15 + lookX * 0.3; // Décalé vers la gauche
+                const eyeY = -5 + lookY * 0.3;
+                
+                ctx.beginPath(); 
+                ctx.ellipse(leftEyeX, eyeY, 8, 8 * eyeScaleY, 0, 0, Math.PI * 2); 
+                ctx.fill();
+            }
         }
         ctx.restore();
     }
@@ -271,8 +320,28 @@ export class PlayerRenderer {
         const flY = Math.sin(time) * 5;
 
         // Default Idle Positions
-        let h1x3D = 25 * facing, h1y3D = 10 + flY, h1z3D = 10;
-        let h2x3D = -20 * facing, h2y3D = 10 + flY, h2z3D = -10;
+        // Inversion des mains selon la direction pour perspective cohérente
+        let h1x3D, h1y3D, h1z3D;
+        let h2x3D, h2y3D, h2z3D;
+
+        if (facing === 1) { // Regarde Droite
+            h1x3D = 25;  // Main Avant (Droite)
+            h1y3D = 10 + flY; 
+            h1z3D = 10;  // Devant
+            
+            h2x3D = -20; // Main Arrière (Gauche)
+            h2y3D = 15 + flY; // Un peu plus basse pour perspective
+            h2z3D = -10; // Derrière
+        } else { // Regarde Gauche
+            h1x3D = -25; // Main Avant (Gauche)
+            h1y3D = 10 + flY;
+            h1z3D = 10; // Devant
+            
+            h2x3D = 20; // Main Arrière (Droite)
+            h2y3D = 15 + flY; // Un peu plus basse
+            h2z3D = -10; // Derrière
+        }
+
         let batRotation = -Math.PI / 4 * facing;
         let bodyRotationZ = 0;
         let batVisible = true;
@@ -434,31 +503,44 @@ export class PlayerRenderer {
             ctx.translate(h1Proj.x, h1Proj.y);
             ctx.rotate(batRotation);
 
-            ctx.fillStyle = '#eee';
-            ctx.shadowColor = '#fff';
-            ctx.shadowBlur = 20;
-            ctx.fillRect(-2, -5, 15, 6); // Handle
+            // Batte Toon
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = '#000';
             
+            // Handle
+            ctx.fillStyle = '#ccc';
+            ctx.fillRect(-2, -5, 15, 6); 
+            ctx.strokeRect(-2, -5, 15, 6);
+            
+            // Bat Body
             ctx.beginPath();
             ctx.moveTo(10, -5); ctx.lineTo(80, -10);
             ctx.quadraticCurveTo(90, -5, 90, 0);
             ctx.quadraticCurveTo(90, 5, 80, 10);
             ctx.lineTo(10, 5);
+            ctx.closePath();
+            
+            ctx.fillStyle = '#fff'; // White Bat
             ctx.fill();
+            ctx.stroke();
 
-            // Hand on top
+            // Hand on top (Toon)
             ctx.fillStyle = p.victoryStance ? '#ffd700' : p.color;
-            ctx.shadowColor = ctx.fillStyle;
             ctx.beginPath(); ctx.arc(0, 0, 8, 0, Math.PI * 2); ctx.fill();
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = '#000';
+            ctx.stroke();
 
             ctx.restore();
         };
 
         const hand2 = () => {
-             // Back Hand (Free hand)
+             // Back Hand (Free hand - Toon)
             ctx.fillStyle = p.color;
-            ctx.shadowBlur = 15;
             ctx.beginPath(); ctx.arc(h2Proj.x, h2Proj.y, 8, 0, Math.PI * 2); ctx.fill();
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = '#000';
+            ctx.stroke();
         };
 
         if (h1z3D < h2z3D) {
@@ -470,12 +552,25 @@ export class PlayerRenderer {
 
     drawSmear(ctx, radius, startAngle, endAngle, counterClockwise) {
         ctx.save();
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+        // Smear "Toon" (Solid + Outline)
         ctx.lineWidth = 40;
         ctx.lineCap = 'round';
+        
+        // 1. Outline (Gros trait blanc transparent)
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
         ctx.beginPath();
         ctx.arc(0, 0, radius, startAngle, endAngle, counterClockwise);
         ctx.stroke();
+
+        // 2. Core (Trait fin net)
+        ctx.lineWidth = 15;
+        ctx.strokeStyle = '#ffffff';
+        ctx.shadowBlur = 10;
+        ctx.shadowColor = '#00f3ff'; // Cyan smear
+        ctx.beginPath();
+        ctx.arc(0, 0, radius, startAngle, endAngle, counterClockwise);
+        ctx.stroke();
+        
         ctx.restore();
     }
     

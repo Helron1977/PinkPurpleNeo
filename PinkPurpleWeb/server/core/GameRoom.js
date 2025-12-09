@@ -95,241 +95,176 @@ class GameRoom {
         const p2 = this.players['p2'];
 
         if (p1 && p2) {
-            // Threads et Webs sont maintenant dans le binaire broadcastState
-            // Plus besoin d'envoyer des événements 'thread_update' ou 'web_update'
-            
             const p1Status = p1.update(this.obstacles);
             const p2Status = p2.update(this.obstacles);
 
-            // Emit bounce events
-            if (p1Status.bounced) {
-                this.io.to(this.id).emit('event', { type: 'bounce', player: 'p1' });
-            }
-            if (p2Status.bounced) {
-                this.io.to(this.id).emit('event', { type: 'bounce', player: 'p2' });
-            }
-
+            // Optimisation: Early exit si les joueurs sont morts
             if (p1Status.dead) {
-                this.scores.p2++;
-                p1.reset();
-                // Réinitialiser la toile d'araignée du gagnant à chaque victoire
-                p2.webAvailable = true;
-                p2.webActive = null;
-                this.io.to(this.id).emit('score', this.scores);
-                const deathEvent = { type: 'death', player: 'p1' };
-                this.io.to(this.id).emit('event', deathEvent);
-                // Notifier les bots pour l'apprentissage
-                this.botCallbacks.onEvent(this.id, deathEvent);
+                this.handleDeath('p1', p1, p2);
+                return; // Stop physics for this frame
             }
             if (p2Status.dead) {
-                this.scores.p1++;
-                p2.reset();
-                // Réinitialiser la toile d'araignée du gagnant à chaque victoire
-                p1.webAvailable = true;
-                p1.webActive = null;
-                this.io.to(this.id).emit('score', this.scores);
-                const deathEvent = { type: 'death', player: 'p2' };
-                this.io.to(this.id).emit('event', deathEvent);
-                // Notifier les bots pour l'apprentissage
-                this.botCallbacks.onEvent(this.id, deathEvent);
+                this.handleDeath('p2', p2, p1);
+                return;
             }
 
+            // Emit bounce events
+            if (p1Status.bounced) this.io.to(this.id).emit('event', { type: 'bounce', player: 'p1' });
+            if (p2Status.bounced) this.io.to(this.id).emit('event', { type: 'bounce', player: 'p2' });
+
+            // Distance Squared (évite Math.sqrt)
             const dx = p2.x - p1.x;
             const dy = p2.y - p1.y;
-            const dist = Math.sqrt(dx * dx + dy * dy);
-            const angleV1V2 = Math.atan2(dy, dx);
+            const distSq = dx * dx + dy * dy;
 
-            // Geometric Hit Detection
-            const checkHit = (attacker, victim, dist, angleAttackToVictim) => {
-                // 1. Range Check: Player Radius (25) + Bat Reach (~100) = 125
-                if (dist > 140) return false; // Generous reach
+            // Optimisation: Hit Detection seulement si proche (< 140px => 19600 sq px)
+            if (distSq < 19600) {
+                const dist = Math.sqrt(distSq); // sqrt seulement si nécessaire
+                const angleV1V2 = Math.atan2(dy, dx);
 
-                // 2. Angle Check (Cone)
-                // Attacker Facing: 0 (Right) or PI (Left)
-                const facingAngle = attacker.lastFacing === 1 ? 0 : Math.PI;
-
-                // Angle Difference
-                let diff = angleAttackToVictim - facingAngle;
-                // Normalize to [-PI, PI]
-                while (diff > Math.PI) diff -= Math.PI * 2;
-                while (diff < -Math.PI) diff += Math.PI * 2;
-
-                // Cone width: +/- 60 degrees (~1.0 radian)
-                return Math.abs(diff) < 1.2;
-            };
-
-            // Priority check: did P1 hit P2?
-            let p1HitP2 = false;
-            if (p1.isHit && checkHit(p1, p2, dist, angleV1V2)) {
-                // CALCUL ANGLE D'ÉJECTION basé sur la direction réelle de la batte
-                // Utiliser lastAction pour déterminer la direction de l'attaque
-                let batAngle;
-                if (p1.currentAttackDirection === 'up') {
-                    // Attaque vers le haut : angle vertical vers le haut
-                    batAngle = -Math.PI / 2; // Vers le haut
-                    // Ajuster légèrement selon la position relative
-                    const horizontalOffset = Math.atan2(dx, Math.abs(dy)) * 0.3;
-                    batAngle += horizontalOffset;
-                } else {
-                    // Attaque horizontale : direction basée sur facing
-                    batAngle = p1.lastFacing === 1 ? 0 : Math.PI; // Direction horizontale de la batte
-                    // Ajuster selon la position verticale de la victime
-                    const verticalOffset = Math.atan2(dy, Math.abs(dx)); // Angle vertical relatif
-                    // Combiner: direction de la batte + composante verticale
-                    batAngle += Math.max(-Math.PI / 3, Math.min(Math.PI / 3, verticalOffset * 0.5));
+                // Priority check: did P1 hit P2?
+                let p1HitP2 = false;
+                if (p1.isHit && this.checkHit(p1, p2, dist, angleV1V2)) {
+                    this.resolveHit(p1, p2, dx, dy);
+                    p1HitP2 = true;
                 }
-                const ejectionAngle = batAngle;
-                
-                // Calcul du multiplicateur de combo
-                let comboMultiplier = 1.0;
-                if (p1.attackCombo >= 2) {
-                    comboMultiplier = 2.0; // Attaque*2 = sortie possible
-                } else if (p1.dashAttackCombo) {
-                    comboMultiplier = 1.8; // Dash+attaque = sortie possible
-                }
-                
-                p2.prepareEjection(ejectionAngle, comboMultiplier); // Prepare Launch avec angle corrigé et combo
-                p1.enterVictoryStance(); // ATTACKER FLOATS
-                p1.isHit = false; // Consume hit
-                p1.dashAttackCombo = false; // Reset combo
 
-                // CRITICAL FIX: P2 is stunned, so they CANNOT attack P1 back in this frame
-                p2.isHit = false;
-                p2.activeHitboxTimer = 0;
-
-                // GLOBAL FREEZE ON HIT
-                this.globalHitStop = 30;
-
-                const hitEvent = { type: 'hit', from: 'p1', to: 'p2', damage: p2.damage };
-                this.io.to(this.id).emit('event', hitEvent);
-                this.botCallbacks.onEvent(this.id, hitEvent);
-                p1HitP2 = true;
-            }
-
-            // Only check P2 attack if P2 wasn't just stunned
-            if (!p1HitP2 && p2.isHit) {
-                const angleV2V1 = Math.atan2(-dy, -dx);
-                if (checkHit(p2, p1, dist, angleV2V1)) {
-                    // CALCUL ANGLE D'ÉJECTION basé sur la direction réelle de la batte
-                    let batAngle;
-                    if (p2.currentAttackDirection === 'up') {
-                        // Attaque vers le haut : angle vertical vers le haut
-                        batAngle = -Math.PI / 2; // Vers le haut
-                        // Ajuster légèrement selon la position relative
-                        const horizontalOffset = Math.atan2(-dx, Math.abs(-dy)) * 0.3;
-                        batAngle += horizontalOffset;
-                    } else {
-                        // Attaque horizontale : direction basée sur facing
-                        batAngle = p2.lastFacing === 1 ? 0 : Math.PI;
-                        const verticalOffset = Math.atan2(-dy, Math.abs(-dx));
-                        batAngle += Math.max(-Math.PI / 3, Math.min(Math.PI / 3, verticalOffset * 0.5));
+                // Only check P2 attack if P2 wasn't just stunned
+                if (!p1HitP2 && p2.isHit) {
+                    const angleV2V1 = Math.atan2(-dy, -dx);
+                    if (this.checkHit(p2, p1, dist, angleV2V1)) {
+                        this.resolveHit(p2, p1, -dx, -dy);
                     }
-                    const ejectionAngle = batAngle;
-                    
-                    // Calcul du multiplicateur de combo
-                    let comboMultiplier = 1.0;
-                    if (p2.attackCombo >= 2) {
-                        comboMultiplier = 2.0; // Attaque*2 = sortie possible
-                    } else if (p2.dashAttackCombo) {
-                        comboMultiplier = 1.8; // Dash+attaque = sortie possible
-                    }
-                    
-                    p1.prepareEjection(ejectionAngle, comboMultiplier); // Prepare Launch avec angle corrigé et combo
-                    p2.enterVictoryStance(); // ATTACKER FLOATS
-                    p2.isHit = false; // Consume hit
-                    p2.dashAttackCombo = false; // Reset combo
-
-                    // CRITICAL FIX: P1 is stunned
-                    p1.isHit = false;
-                    p1.activeHitboxTimer = 0;
-
-                    // GLOBAL FREEZE ON HIT
-                    this.globalHitStop = 30;
-
-                    const hitEvent = { type: 'hit', from: 'p2', to: 'p1', damage: p1.damage };
-                    this.io.to(this.id).emit('event', hitEvent);
-                    this.botCallbacks.onEvent(this.id, hitEvent);
                 }
             }
 
-            // Détection collision fil/grappin
+            // Ability Collisions (Optimized with distSq check first)
+            this.checkAbilityCollisions(p1, p2, distSq, dx, dy);
+        }
+
+        this.updateGrenades(p1, p2);
+        this.checkWinCondition();
+    }
+
+    // Helper: Handle Death
+    handleDeath(victimId, victim, killer) {
+        this.scores[killer.isPlayer1 ? 'p1' : 'p2']++;
+        victim.reset();
+        killer.webAvailable = true;
+        killer.webActive = null;
+        this.io.to(this.id).emit('score', this.scores);
+        const deathEvent = { type: 'death', player: victimId };
+        this.io.to(this.id).emit('event', deathEvent);
+        this.botCallbacks.onEvent(this.id, deathEvent);
+    }
+
+    // Helper: Geometric Hit Check
+    checkHit(attacker, victim, dist, angleAttackToVictim) {
+        if (dist > 140) return false;
+        
+        // CORPS A CORPS : Si très proche, le coup touche presque tout le temps (180° devant)
+        if (dist < 60) {
+            // Pas de check d'angle strict, juste être vaguement "devant" (ou même 360 pour éviter frustration)
+            // Soyons généreux : Auto-hit si collé
+            return true;
+        }
+
+        const facingAngle = attacker.lastFacing === 1 ? 0 : Math.PI;
+        let diff = angleAttackToVictim - facingAngle;
+        while (diff > Math.PI) diff -= Math.PI * 2;
+        while (diff < -Math.PI) diff += Math.PI * 2;
+        
+        // Tolérance angulaire (Cone)
+        return Math.abs(diff) < 1.2;
+    }
+
+    // Helper: Resolve Hit Logic
+    resolveHit(attacker, victim, dx, dy) {
+        let batAngle;
+        if (attacker.currentAttackDirection === 'up') {
+            batAngle = -Math.PI / 2;
+            const horizontalOffset = Math.atan2(dx, Math.abs(dy)) * 0.3;
+            batAngle += horizontalOffset;
+        } else {
+            batAngle = attacker.lastFacing === 1 ? 0 : Math.PI;
+            const verticalOffset = Math.atan2(dy, Math.abs(dx));
+            batAngle += Math.max(-Math.PI / 3, Math.min(Math.PI / 3, verticalOffset * 0.5));
+        }
+        
+        let comboMultiplier = 1.0;
+        if (attacker.attackCombo >= 2) comboMultiplier = 2.0;
+        else if (attacker.dashAttackCombo) comboMultiplier = 1.8;
+        
+        victim.prepareEjection(batAngle, comboMultiplier);
+        attacker.enterVictoryStance();
+        attacker.isHit = false;
+        attacker.dashAttackCombo = false;
+        victim.isHit = false;
+        victim.activeHitboxTimer = 0;
+        this.globalHitStop = 30;
+
+        const hitEvent = { type: 'hit', from: attacker.isPlayer1 ? 'p1' : 'p2', to: victim.isPlayer1 ? 'p1' : 'p2', damage: victim.damage };
+        this.io.to(this.id).emit('event', hitEvent);
+        this.botCallbacks.onEvent(this.id, hitEvent);
+    }
+
+    // Helper: Ability Collisions
+    checkAbilityCollisions(p1, p2, distSq, dx, dy) {
+        // Thread Check (< 30px => 900 sq)
+        if (p1.threadActive || p2.threadActive) {
+            // Need recalculation relative to thread position, not player
             if (p1.threadActive) {
-                const dx = p2.x - p1.threadActive.x;
-                const dy = p2.y - p1.threadActive.y;
-                const dist = Math.sqrt(dx * dx + dy * dy);
-                if (dist < 30) {
-                    // Touché ! Effet de taille
-                    p2.sizeMultiplier = 0.85; // Victime plus petite
-                    p2.sizeEffectTimer = 300; // 5 secondes
-                    p1.sizeMultiplier = 1.15; // Attaquant plus gros
-                    p1.sizeEffectTimer = 300; // 5 secondes
-                    p1.threadActive = null;
-                    this.io.to(this.id).emit('event', { 
-                        type: 'thread_hit', 
-                        from: 'p1', 
-                        to: 'p2',
-                        fromSize: 1.15,
-                        toSize: 0.85
-                    });
+                const tdx = p2.x - p1.threadActive.x;
+                const tdy = p2.y - p1.threadActive.y;
+                if (tdx*tdx + tdy*tdy < 900) {
+                    this.applyThreadHit(p1, p2, 'p1', 'p2');
                 }
             }
             if (p2.threadActive) {
-                const dx = p1.x - p2.threadActive.x;
-                const dy = p1.y - p2.threadActive.y;
-                const dist = Math.sqrt(dx * dx + dy * dy);
-                if (dist < 30) {
-                    // Touché ! Effet de taille
-                    p1.sizeMultiplier = 0.85; // Victime plus petite
-                    p1.sizeEffectTimer = 300; // 5 secondes
-                    p2.sizeMultiplier = 1.15; // Attaquant plus gros
-                    p2.sizeEffectTimer = 300; // 5 secondes
-                    p2.threadActive = null;
-                    this.io.to(this.id).emit('event', { 
-                        type: 'thread_hit', 
-                        from: 'p2', 
-                        to: 'p1',
-                        fromSize: 1.15,
-                        toSize: 0.85
-                    });
-                }
-            }
-            
-            // Détection collision toile d'araignée
-            if (p1.webActive) {
-                const dx = p2.x - p1.webActive.x;
-                const dy = p2.y - p1.webActive.y;
-                const dist = Math.sqrt(dx * dx + dy * dy);
-                if (dist < p1.webActive.radius + 25) { // Rayon + rayon joueur
-                    // Touché par la toile ! Ralentissement
-                    p2.moveCooldown = Math.max(p2.moveCooldown, 180); // 3 secondes de ralentissement
-                    this.io.to(this.id).emit('event', { 
-                        type: 'web_hit', 
-                        from: 'p1', 
-                        to: 'p2'
-                    });
-                }
-            }
-            if (p2.webActive) {
-                const dx = p1.x - p2.webActive.x;
-                const dy = p1.y - p2.webActive.y;
-                const dist = Math.sqrt(dx * dx + dy * dy);
-                if (dist < p2.webActive.radius + 25) { // Rayon + rayon joueur
-                    // Touché par la toile ! Ralentissement
-                    p1.moveCooldown = Math.max(p1.moveCooldown, 180); // 3 secondes de ralentissement
-                    this.io.to(this.id).emit('event', { 
-                        type: 'web_hit', 
-                        from: 'p2', 
-                        to: 'p1'
-                    });
+                const tdx = p1.x - p2.threadActive.x;
+                const tdy = p1.y - p2.threadActive.y;
+                if (tdx*tdx + tdy*tdy < 900) {
+                    this.applyThreadHit(p2, p1, 'p2', 'p1');
                 }
             }
         }
 
-        // Update grenades
+        // Web Check
+        if (p1.webActive) {
+            const wdx = p2.x - p1.webActive.x;
+            const wdy = p2.y - p1.webActive.y;
+            const radius = p1.webActive.radius + 25;
+            if (wdx*wdx + wdy*wdy < radius*radius) {
+                p2.moveCooldown = Math.max(p2.moveCooldown, 180);
+                this.io.to(this.id).emit('event', { type: 'web_hit', from: 'p1', to: 'p2' });
+            }
+        }
+        if (p2.webActive) {
+            const wdx = p1.x - p2.webActive.x;
+            const wdy = p1.y - p2.webActive.y;
+            const radius = p2.webActive.radius + 25;
+            if (wdx*wdx + wdy*wdy < radius*radius) {
+                p1.moveCooldown = Math.max(p1.moveCooldown, 180);
+                this.io.to(this.id).emit('event', { type: 'web_hit', from: 'p2', to: 'p1' });
+            }
+        }
+    }
+
+    applyThreadHit(attacker, victim, fromId, toId) {
+        victim.sizeMultiplier = 0.85;
+        victim.sizeEffectTimer = 300;
+        attacker.sizeMultiplier = 1.15;
+        attacker.sizeEffectTimer = 300;
+        attacker.threadActive = null;
+        this.io.to(this.id).emit('event', { 
+            type: 'thread_hit', from: fromId, to: toId, fromSize: 1.15, toSize: 0.85 
+        });
+    }
+
+    updateGrenades(p1, p2) {
         for (let i = this.grenades.length - 1; i >= 0; i--) {
             const grenade = this.grenades[i];
 
-            // Sticky Logic
             if (grenade.attachedTo) {
                 const target = this.players[grenade.attachedTo];
                 if (target) {
@@ -337,77 +272,47 @@ class GameRoom {
                     grenade.y = target.y;
                     grenade.startX = target.x;
                     grenade.startY = target.y;
-                    grenade.age++; // Still age while stuck
+                    grenade.age++;
                 } else {
-                    grenade.attachedTo = null; // Target disconnected/died
+                    grenade.attachedTo = null;
                 }
             } else {
-                // Normal physics
                 grenade.update(this.obstacles);
-
-                // Check collision with players for Sticking
-                // User requirement: Stuck to Opponent
+                // Check Stick (Simple dist check)
                 const checkStick = (pid) => {
                     const p = this.players[pid];
-                    if (p && grenade.owner !== p.id) { // Only stick to non-owner (opponent)
+                    if (p && grenade.owner !== p.id) {
                         const dx = p.x - grenade.x;
                         const dy = p.y - grenade.y;
-                        const dist = Math.sqrt(dx * dx + dy * dy);
-                        if (dist < 40) { // Player Radius (25) + Grenade Radius (12.5) approx
+                        if (dx*dx + dy*dy < 1600) { // 40*40
                             grenade.attachedTo = pid;
                         }
                     }
                 };
-
-                // We don't know who is P1/P2 by ID easily in the loop, but players map keys are 'p1', 'p2'
-                if (this.players['p1']) checkStick('p1');
-                if (this.players['p2']) checkStick('p2');
+                if (p1) checkStick('p1');
+                if (p2) checkStick('p2');
             }
 
-            // Check if grenade exploded
             if (grenade.exploded || grenade.age >= 60) {
-                // Explosion! Check for players in blast radius
-                const BLAST_RADIUS = 12.5 * 6; // 6x grenade size
+                const BLAST_RADIUS = 75; // 12.5 * 6
+                const BLAST_SQ = BLAST_RADIUS * BLAST_RADIUS;
 
-                if (p1) {
-                    const dx1 = p1.x - grenade.x;
-                    const dy1 = p1.y - grenade.y;
-                    const dist1 = Math.sqrt(dx1 * dx1 + dy1 * dy1);
-
-                    if (dist1 < BLAST_RADIUS) {
-                        const angle1 = Math.atan2(dy1, dx1);
-                        p1.prepareEjection(angle1); // Use new method
-                        this.globalHitStop = 30; // FREEZE ON EXPLOSION
-                        const grenadeHitEvent = {
-                            type: 'grenade_hit',
-                            target: 'p1',
-                            damage: p1.damage
-                        };
-                        this.io.to(this.id).emit('event', grenadeHitEvent);
-                        this.botCallbacks.onEvent(this.id, grenadeHitEvent);
+                const checkBlast = (player, pid) => {
+                    if (!player) return;
+                    const dx = player.x - grenade.x;
+                    const dy = player.y - grenade.y;
+                    if (dx*dx + dy*dy < BLAST_SQ) {
+                        player.prepareEjection(Math.atan2(dy, dx));
+                        this.globalHitStop = 30;
+                        const evt = { type: 'grenade_hit', target: pid, damage: player.damage };
+                        this.io.to(this.id).emit('event', evt);
+                        this.botCallbacks.onEvent(this.id, evt);
                     }
-                }
+                };
 
-                if (p2) {
-                    const dx2 = p2.x - grenade.x;
-                    const dy2 = p2.y - grenade.y;
-                    const dist2 = Math.sqrt(dx2 * dx2 + dy2 * dy2);
+                checkBlast(p1, 'p1');
+                checkBlast(p2, 'p2');
 
-                    if (dist2 < BLAST_RADIUS) {
-                        const angle2 = Math.atan2(dy2, dx2);
-                        p2.prepareEjection(angle2); // Use new method
-                        this.globalHitStop = 30; // FREEZE ON EXPLOSION
-                        const grenadeHitEvent = {
-                            type: 'grenade_hit',
-                            target: 'p2',
-                            damage: p2.damage
-                        };
-                        this.io.to(this.id).emit('event', grenadeHitEvent);
-                        this.botCallbacks.onEvent(this.id, grenadeHitEvent);
-                    }
-                }
-
-                // Emit explosion event for client rendering
                 const explodeEvent = {
                     type: 'grenade_explode',
                     x: Math.round(grenade.x),
@@ -416,36 +321,26 @@ class GameRoom {
                 };
                 this.io.to(this.id).emit('event', explodeEvent);
                 this.botCallbacks.onEvent(this.id, explodeEvent);
-
-                // Remove grenade
                 this.grenades.splice(i, 1);
             }
         }
+    }
 
+    checkWinCondition() {
         if (this.scores.p1 >= 10 || this.scores.p2 >= 10) {
             const winner = this.scores.p1 >= 10 ? 'p1' : 'p2';
             const winnerPlayer = this.players[winner];
-            
-            // Animation de victoire centrée sur le gagnant
             if (winnerPlayer) {
                 this.io.to(this.id).emit('event', { 
-                    type: 'victory_animation', 
-                    player: winner,
-                    x: winnerPlayer.x,
-                    y: winnerPlayer.y
+                    type: 'victory_animation', player: winner, x: winnerPlayer.x, y: winnerPlayer.y 
                 });
             }
-            
             this.io.to(this.id).emit('game_over', { winner: winner });
-
-            // Notifier les bots de la fin de partie pour l'apprentissage
             this.botCallbacks.onGameEnd(this.id, winner);
-
             this.scores = { p1: 0, p2: 0 };
-            if (p1) p1.reset();
-            if (p2) p2.reset();
+            if (this.players['p1']) this.players['p1'].reset();
+            if (this.players['p2']) this.players['p2'].reset();
             this.io.to(this.id).emit('score', this.scores);
-
             this.generateObstacles();
             this.io.to(this.id).emit('map_update', this.obstacles);
         }

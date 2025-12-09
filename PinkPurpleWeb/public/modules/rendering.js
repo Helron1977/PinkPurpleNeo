@@ -310,12 +310,42 @@ export class Renderer {
         const ctx = this.ctx;
         for (const g of grenades) {
             ctx.save();
+            ctx.translate(g.x, g.y);
+            
+            // Bomb Body (Black Cartoon Style)
+            ctx.shadowBlur = 0;
+            ctx.fillStyle = '#111';
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(0, 0, GAME_CONFIG.GRENADE_RADIUS, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+
+            // Fuse
+            ctx.strokeStyle = '#8b4513';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(0, -GAME_CONFIG.GRENADE_RADIUS);
+            ctx.quadraticCurveTo(5, -GAME_CONFIG.GRENADE_RADIUS - 10, 10, -GAME_CONFIG.GRENADE_RADIUS - 5);
+            ctx.stroke();
+            
+            // Spark
+            if (Math.random() > 0.5) {
+                ctx.fillStyle = '#ffaa00';
+                ctx.beginPath();
+                ctx.arc(10, -GAME_CONFIG.GRENADE_RADIUS - 5, 3, 0, Math.PI*2);
+                ctx.fill();
+            }
+
+            // Glow
             ctx.shadowBlur = 15;
             ctx.shadowColor = COLORS.YELLOW;
-            ctx.fillStyle = COLORS.YELLOW;
+            ctx.fillStyle = 'rgba(255, 255, 0, 0.3)';
             ctx.beginPath();
-            ctx.arc(g.x, g.y, GAME_CONFIG.GRENADE_RADIUS, 0, Math.PI * 2);
+            ctx.arc(0, 0, GAME_CONFIG.GRENADE_RADIUS - 2, 0, Math.PI * 2);
             ctx.fill();
+
             ctx.restore();
         }
     }
@@ -345,27 +375,62 @@ export class Renderer {
         const ctx = this.ctx;
         const radius = GAME_CONFIG.SCORE_CIRCLE_RADIUS;
 
+        // Fond Noir + Contour
         ctx.beginPath(); ctx.arc(x, y, radius, 0, Math.PI * 2);
-        ctx.fillStyle = COLORS.BLACK_TRANSPARENT; ctx.fill();
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.8)'; ctx.fill();
+        ctx.lineWidth = 4; ctx.strokeStyle = '#000'; ctx.stroke();
 
+        // Jauge de Dégâts (Red)
         const damagePercent = Math.min(damage, 100) / 100;
         if (damagePercent > 0) {
             ctx.beginPath(); ctx.moveTo(x, y);
-            ctx.arc(x, y, radius, -Math.PI / 2, -Math.PI / 2 + (Math.PI * 2 * damagePercent));
-            ctx.lineTo(x, y); ctx.fillStyle = COLORS.RED; ctx.fill();
+            ctx.arc(x, y, radius - 2, -Math.PI / 2, -Math.PI / 2 + (Math.PI * 2 * damagePercent));
+            ctx.lineTo(x, y); ctx.fillStyle = '#e74c3c'; ctx.fill();
+            // Ligne séparation jauge
+            ctx.lineWidth = 2; ctx.strokeStyle = '#000'; ctx.stroke();
         }
 
+        // Cercle extérieur (Couleur Joueur)
         ctx.beginPath(); ctx.arc(x, y, radius, 0, Math.PI * 2);
-        ctx.strokeStyle = color; ctx.lineWidth = 5; ctx.shadowBlur = 30; ctx.shadowColor = color; ctx.stroke();
+        ctx.strokeStyle = color; ctx.lineWidth = 5; 
+        ctx.shadowBlur = 20; ctx.shadowColor = color; 
+        ctx.stroke();
         
-        ctx.font = "bold 80px Orbitron"; ctx.fillStyle = color; ctx.shadowBlur = 0; ctx.fillText(score, x, y);
-        ctx.font = "bold 30px Orbitron"; ctx.fillStyle = "#ffffff"; ctx.shadowBlur = 10; ctx.fillText(name || "Player", x, y - 110);
+        // Contour noir par dessus le néon pour netteté
+        ctx.shadowBlur = 0;
+        ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 1; ctx.stroke();
+        
+        // Score Text
+        ctx.font = "bold 80px Orbitron"; 
+        ctx.fillStyle = color; 
+        ctx.shadowBlur = 0; 
+        ctx.lineWidth = 3; ctx.strokeStyle = '#000'; ctx.strokeText(score, x, y);
+        ctx.fillText(score, x, y);
 
+        // Name Text
+        ctx.font = "bold 30px Orbitron"; 
+        ctx.fillStyle = "#ffffff"; 
+        ctx.shadowBlur = 0; 
+        ctx.lineWidth = 3; ctx.strokeStyle = '#000'; ctx.strokeText(name || "Player", x, y - 110);
+        ctx.fillText(name || "Player", x, y - 110);
+
+        // Grenades
         for (let i = 0; i < 3; i++) {
-            ctx.beginPath(); ctx.arc(x - 30 + i * 30, y + 100, 10, 0, Math.PI * 2);
-            ctx.fillStyle = i < grenadeCount ? 'red' : '#333';
-            ctx.shadowBlur = i < grenadeCount ? 10 : 0;
-            ctx.fill();
+            const gx = x - 30 + i * 30;
+            const gy = y + 100;
+            
+            // Grenade Slot Background
+            ctx.beginPath(); ctx.arc(gx, gy, 12, 0, Math.PI * 2);
+            ctx.fillStyle = '#222'; ctx.fill(); ctx.strokeStyle='#000'; ctx.lineWidth=2; ctx.stroke();
+
+            if (i < grenadeCount) {
+                // Active Grenade Icon
+                ctx.beginPath(); ctx.arc(gx, gy, 8, 0, Math.PI * 2);
+                ctx.fillStyle = '#ffaa00'; ctx.fill();
+                ctx.shadowBlur = 10; ctx.shadowColor = '#ffaa00'; 
+                // Sparkle
+                ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(gx-3, gy-3, 2, 0, Math.PI*2); ctx.fill();
+            }
         }
     }
 

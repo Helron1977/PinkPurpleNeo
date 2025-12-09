@@ -1,4 +1,5 @@
 import { GAME_CONFIG, COLORS } from '../constants.js';
+import { Projection3D } from '../animations/Projection3D.js';
 
 export class EffectRenderer {
     constructor(ctx, comboSystem) {
@@ -7,6 +8,7 @@ export class EffectRenderer {
         this.particles = [];
         this.floatingMessages = [];
         this.shakeIntensity = 0;
+        this.projection3D = new Projection3D(); // Instance pour projeter les effets correctement
     }
 
     addShake(intensity) {
@@ -165,6 +167,11 @@ export class EffectRenderer {
                 ctx.font = `bold ${20 + combo.level * 5}px Orbitron`;
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
+                
+                // Outline Black
+                ctx.lineWidth = 3;
+                ctx.strokeStyle = '#000';
+                ctx.strokeText(`${combo.count}x ${combo.name}`, 0, 0);
                 ctx.fillText(`${combo.count}x ${combo.name}`, 0, 0);
                 
                 // Particles
@@ -191,17 +198,27 @@ export class EffectRenderer {
         const time = Date.now() / 1000;
         
         ctx.save();
-        ctx.translate(x, y);
+        ctx.translate(x + 5, y + 5); // Centered offset
         
-        // Energy Circle
+        // Energy Circle (Cartoon Style)
         const pulseRadius = 100 + Math.sin(time * 3) * 20;
+        
+        // Fond cercle
+        ctx.fillStyle = 'rgba(0,0,0,0.3)';
+        ctx.beginPath(); ctx.arc(0, 0, pulseRadius, 0, Math.PI * 2); ctx.fill();
+
+        // Contour
         ctx.strokeStyle = playerColor;
-        ctx.lineWidth = 5;
+        ctx.lineWidth = 6;
         ctx.shadowBlur = 30;
         ctx.shadowColor = playerColor;
-        ctx.globalAlpha = 0.8;
-        ctx.beginPath();
-        ctx.arc(0, 0, pulseRadius, 0, Math.PI * 2);
+        ctx.globalAlpha = 1.0;
+        ctx.stroke();
+        
+        // Contour Noir fin pour netteté
+        ctx.shadowBlur = 0;
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = '#000';
         ctx.stroke();
         
         // Particles
@@ -215,18 +232,20 @@ export class EffectRenderer {
             ctx.beginPath();
             ctx.arc(px, py, 8, 0, Math.PI * 2);
             ctx.fill();
+            ctx.stroke(); // Outline particle
         }
         
         // Text
         ctx.globalAlpha = 1.0;
         ctx.fillStyle = '#ffd700';
         ctx.strokeStyle = '#000';
-        ctx.lineWidth = 4;
+        ctx.lineWidth = 6; // Gros contour noir
         ctx.font = 'bold 60px Orbitron';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.shadowBlur = 20;
         ctx.shadowColor = '#ffd700';
+        
         ctx.strokeText('VICTORY!', 0, -150);
         ctx.fillText('VICTORY!', 0, -150);
         

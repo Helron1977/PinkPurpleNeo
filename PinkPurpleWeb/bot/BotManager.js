@@ -3,7 +3,6 @@
  */
 
 const BotAI = require('./BotAI');
-const BotLearning = require('./BotLearning');
 
 class BotManager {
     constructor(PlayerClass, GrenadeClass, ioInstance) {
@@ -11,7 +10,6 @@ class BotManager {
         this.GrenadeClass = GrenadeClass;
         this.io = ioInstance;
         this.activeBots = new Map(); // Map<roomId, BotAI>
-        this.learningSystem = new BotLearning(); // Système d'apprentissage partagé
     }
 
     /**
@@ -76,8 +74,8 @@ class BotManager {
         // Ajouter le bot à la room
         room.players[botSlot] = botPlayer;
 
-        // Créer et démarrer l'IA avec le système d'apprentissage
-        const botAI = new BotAI(botPlayer, room, this.GrenadeClass, this.learningSystem);
+        // Créer et démarrer l'IA (Pure Heuristique)
+        const botAI = new BotAI(botPlayer, room, this.GrenadeClass);
         botAI.start();
         this.activeBots.set(room.id, botAI);
 
@@ -109,17 +107,6 @@ class BotManager {
             botAI.stop();
         }
         this.activeBots.clear();
-        // Sauvegarder les connaissances apprises
-        if (this.learningSystem) {
-            this.learningSystem.saveKnowledge();
-        }
-    }
-
-    /**
-     * Obtient les statistiques d'apprentissage
-     */
-    getLearningStats() {
-        return this.learningSystem ? this.learningSystem.getStats() : null;
     }
 }
 

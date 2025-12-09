@@ -31,27 +31,64 @@ export class WorldRenderer {
         for (const bar of this.metalBars) {
             ctx.save();
             ctx.translate(bar.x, bar.y);
+            
+            // --- 3D EXTRUSION (Fake Depth) ---
+            // On dessine un bloc décalé derrière en noir pour donner l'impression de volume
+            const depth = 15;
+            ctx.fillStyle = '#000000';
+            ctx.beginPath();
+            ctx.moveTo(0, 0); // Top-Left
+            ctx.lineTo(bar.w, 0); // Top-Right
+            ctx.lineTo(bar.w + depth, depth); // Top-Right Depth
+            ctx.lineTo(bar.w + depth, bar.h + depth); // Bottom-Right Depth
+            ctx.lineTo(depth, bar.h + depth); // Bottom-Left Depth
+            ctx.lineTo(0, bar.h); // Bottom-Left
+            ctx.closePath();
+            ctx.fill();
+
+            // --- FACE AVANT ---
             ctx.rotate(bar.angle);
 
-            // Glass effect
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.05)';
-            ctx.strokeStyle = bar.color;
-            ctx.lineWidth = 2;
-
-            // Neon Glow
-            ctx.shadowBlur = 20;
-            ctx.shadowColor = bar.color;
-
+            // 1. Fond solide (Darker)
+            ctx.fillStyle = 'rgba(10, 10, 20, 1.0)'; // Opaque pour cacher l'arrière
             ctx.fillRect(0, 0, bar.w, bar.h);
+
+            // 2. Grille Hachurée interne (CONTRASTÉE)
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(0,0,bar.w,bar.h);
+            ctx.clip();
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)'; // Plus visible
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            // Rayures diagonales
+            for(let i=-bar.h; i<bar.w + bar.h; i+=15) {
+                ctx.moveTo(i, 0);
+                ctx.lineTo(i+bar.h, bar.h);
+            }
+            ctx.stroke();
+            ctx.restore();
+
+            // 3. Contour Néon Interne
+            ctx.shadowBlur = 10;
+            ctx.shadowColor = bar.color;
+            ctx.strokeStyle = bar.color;
+            ctx.lineWidth = 3;
             ctx.strokeRect(0, 0, bar.w, bar.h);
 
-            // Subtle reflection
+            // 4. Contour Noir Épais (Cel Shading)
             ctx.shadowBlur = 0;
+            ctx.strokeStyle = '#000000';
+            ctx.lineWidth = 4;
+            ctx.strokeRect(0, 0, bar.w, bar.h);
+
+            // 5. Highlight Edge (Coin haut gauche) - Style "Reflet plastique"
+            ctx.strokeStyle = 'rgba(255,255,255,0.8)';
+            ctx.lineWidth = 3;
             ctx.beginPath();
-            ctx.moveTo(0, bar.h);
-            ctx.lineTo(bar.w, 0);
-            ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
-            ctx.lineWidth = 1;
+            ctx.moveTo(bar.w - 5, 2);
+            ctx.lineTo(2, 2);
+            ctx.lineTo(2, bar.h - 5);
             ctx.stroke();
 
             ctx.restore();
@@ -63,45 +100,69 @@ export class WorldRenderer {
         const { WIDTH, HEIGHT } = GAME_CONFIG;
 
         ctx.save();
-        ctx.lineWidth = 2;
-        ctx.strokeStyle = COLORS.GRID;
+        ctx.lineWidth = 3; // Ligne plus épaisse pour le style BD
+        ctx.strokeStyle = COLORS.GRID; // Couleur grille existante (magenta foncé ?)
+        
+        // On force un cyan sombre pour la grille retro
+        ctx.strokeStyle = 'rgba(0, 243, 255, 0.3)'; 
+
         const horizonY = HEIGHT / 2;
         const centerX = WIDTH / 2;
 
+        // TINTED SURFACE (Sol teinté)
+        // Dégradé pour donner de la profondeur sans perdre transparence
+        const floorGradient = ctx.createLinearGradient(0, horizonY, 0, HEIGHT);
+        floorGradient.addColorStop(0, 'rgba(20, 0, 40, 0.8)'); // Horizon sombre
+        floorGradient.addColorStop(1, 'rgba(40, 0, 60, 0.2)'); // Bas plus clair/transparent
+        ctx.fillStyle = floorGradient;
+        ctx.fillRect(0, horizonY, WIDTH, HEIGHT - horizonY);
+
         // Perspective grid
+        ctx.beginPath();
         for (let i = -10; i <= 10; i++) {
-            ctx.beginPath();
             ctx.moveTo(centerX + i * 50, horizonY + 50);
             ctx.lineTo(centerX + i * 400, HEIGHT);
-            ctx.stroke();
-            ctx.beginPath();
+        }
+        ctx.stroke();
+
+        ctx.beginPath();
+        // Ceiling grid (mirrored)
+        for (let i = -10; i <= 10; i++) {
             ctx.moveTo(centerX + i * 50, horizonY - 50);
             ctx.lineTo(centerX + i * 400, 0);
-            ctx.stroke();
         }
+        ctx.stroke();
 
         // Horizontal lines with animation
         const timeOffset = (Date.now() / 50) % 100;
+        ctx.beginPath();
         for (let y = horizonY + 50; y < HEIGHT; y += 80) {
-            ctx.beginPath();
-            ctx.moveTo(0, y + timeOffset);
-            ctx.lineTo(WIDTH, y + timeOffset);
-            ctx.stroke();
+            const lineY = y + timeOffset;
+            if (lineY < HEIGHT) {
+                ctx.moveTo(0, lineY);
+                ctx.lineTo(WIDTH, lineY);
+            }
         }
-        for (let y = horizonY - 50; y > 0; y -= 80) {
-            ctx.beginPath();
-            ctx.moveTo(0, y - timeOffset);
-            ctx.lineTo(WIDTH, y - timeOffset);
-            ctx.stroke();
-        }
+        ctx.stroke();
 
-        // Glow zones
-        ctx.shadowBlur = 20;
-        ctx.shadowColor = 'cyan';
-        ctx.fillStyle = 'rgba(0, 255, 255, 0.1)';
-        ctx.fillRect(0, HEIGHT - 100, WIDTH, 100);
-        ctx.fillRect(0, 0, WIDTH, 100);
+        ctx.beginPath();
+        for (let y = horizonY - 50; y > 0; y -= 80) {
+             const lineY = y - timeOffset;
+             if (lineY > 0) {
+                ctx.moveTo(0, lineY);
+                ctx.lineTo(WIDTH, lineY);
+             }
+        }
+        ctx.stroke();
+
+        // Glow zones (Vignette)
         ctx.shadowBlur = 0;
+        const vignette = ctx.createRadialGradient(centerX, horizonY, HEIGHT/4, centerX, horizonY, HEIGHT);
+        vignette.addColorStop(0, 'transparent');
+        vignette.addColorStop(1, 'rgba(0,0,0,0.6)'); // Coins sombres style BD
+        ctx.fillStyle = vignette;
+        ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
         ctx.restore();
     }
 
@@ -129,17 +190,30 @@ export class WorldRenderer {
     drawWalls() {
         const ctx = this.ctx;
         const { WIDTH, HEIGHT } = GAME_CONFIG;
-        const WALL_THICKNESS = 5;
+        const WALL_THICKNESS = 10; // Plus épais
 
         // Mur gauche
-        ctx.fillStyle = 'rgba(255, 0, 0, 0.3)';
-        ctx.shadowBlur = 15;
-        ctx.shadowColor = '#ff0000';
-        ctx.fillRect(0, 0, WALL_THICKNESS, HEIGHT);
+        ctx.save();
+        ctx.fillStyle = 'rgba(255, 0, 0, 0.2)'; // Fond rouge léger
         
-        // Mur droit
+        // Hachures Danger
+        const stripePattern = ctx.createLinearGradient(0, 0, 20, 20);
+        stripePattern.addColorStop(0, 'rgba(255, 0, 0, 0.5)');
+        stripePattern.addColorStop(0.5, 'rgba(255, 0, 0, 0.5)');
+        stripePattern.addColorStop(0.5, 'transparent');
+        stripePattern.addColorStop(1, 'transparent');
+        
+        // Draw Left Wall
+        ctx.fillRect(0, 0, WALL_THICKNESS, HEIGHT);
+        ctx.strokeStyle = '#ff0000';
+        ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.moveTo(WALL_THICKNESS, 0); ctx.lineTo(WALL_THICKNESS, HEIGHT); ctx.stroke(); // Ligne rouge
+
+        // Draw Right Wall
         ctx.fillRect(WIDTH - WALL_THICKNESS, 0, WALL_THICKNESS, HEIGHT);
-        ctx.shadowBlur = 0;
+        ctx.beginPath(); ctx.moveTo(WIDTH - WALL_THICKNESS, 0); ctx.lineTo(WIDTH - WALL_THICKNESS, HEIGHT); ctx.stroke();
+
+        ctx.restore();
     }
 }
 
