@@ -236,7 +236,7 @@ class GameRoom {
             const radius = p1.webActive.radius + 25;
             if (wdx*wdx + wdy*wdy < radius*radius) {
                 p2.moveCooldown = Math.max(p2.moveCooldown, 180);
-                this.io.to(this.id).emit('event', { type: 'web_hit', from: 'p1', to: 'p2' });
+                this.io.to(this.id).emit('event', { type: 'web_hit', from: 'p1', to: 'p2', x: p2.x, y: p2.y });
             }
         }
         if (p2.webActive) {
@@ -245,7 +245,7 @@ class GameRoom {
             const radius = p2.webActive.radius + 25;
             if (wdx*wdx + wdy*wdy < radius*radius) {
                 p1.moveCooldown = Math.max(p1.moveCooldown, 180);
-                this.io.to(this.id).emit('event', { type: 'web_hit', from: 'p2', to: 'p1' });
+                this.io.to(this.id).emit('event', { type: 'web_hit', from: 'p2', to: 'p1', x: p1.x, y: p1.y });
             }
         }
     }
@@ -257,7 +257,7 @@ class GameRoom {
         attacker.sizeEffectTimer = 300;
         attacker.threadActive = null;
         this.io.to(this.id).emit('event', { 
-            type: 'thread_hit', from: fromId, to: toId, fromSize: 1.15, toSize: 0.85 
+            type: 'thread_hit', from: fromId, to: toId, fromSize: 1.15, toSize: 0.85, x: victim.x, y: victim.y 
         });
     }
 

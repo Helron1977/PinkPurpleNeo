@@ -134,10 +134,12 @@ window.addEventListener('load', () => {
         } else if (event.type === 'floating_text') {
             renderer.addFloatingText(event.x, event.y, event.text, event.color);
         } else if (event.type === 'thread_hit') {
-            renderer.playerRenderer.addSizeEffect(event.player, event.toSize, 300); // 5 sec (60fps)
+            renderer.playerRenderer.addSizeEffect(event.from, event.fromSize, 300);
+            renderer.playerRenderer.addSizeEffect(event.to, event.toSize, 300);
             renderer.addFloatingText(event.x, event.y, "DRAIN!", "#00ff00");
         } else if (event.type === 'web_hit') {
             renderer.addFloatingText(event.x, event.y, "STUCK!", "#ffffff");
+            renderer.playerRenderer.triggerAnimation(event.to, 'stunned', 2000, { isHit: false });
         }
     });
 
