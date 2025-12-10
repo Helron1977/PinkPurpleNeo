@@ -205,7 +205,7 @@ export class Renderer {
         this.ctx.filter = 'none';
 
         // Camera Logic
-        // Intro Override
+        // 1. Intro Override (PRIORITY 1)
         if (this.introState.active) {
             const elapsed = Date.now() - this.introState.startTime;
             if (elapsed < this.introState.duration) {
@@ -216,15 +216,14 @@ export class Renderer {
                 // Zoom from 0.4 to 1.0
                 this.cameraZoom = 0.4 + (0.6 * ease);
                 
-                // Focus: Start high up (0,0 implied or center) to current center
-                // Force center focus during intro
                 this.cameraFocus.x = GAME_CONFIG.WIDTH / 2;
                 this.cameraFocus.y = GAME_CONFIG.HEIGHT / 2;
             } else {
                 this.introState.active = false;
             }
-        } else {
-            // Normal Camera logic
+        } 
+        // 2. Normal Camera logic
+        else {
             this.cameraZoom += (this.targetZoom - this.cameraZoom) * 0.1;
             if (this.cameraZoom < 1.1) {
                 this.cameraFocus.x += (GAME_CONFIG.WIDTH / 2 - this.cameraFocus.x) * 0.1;
@@ -293,15 +292,6 @@ export class Renderer {
         // Certaines tablettes Android peuvent avoir des bugs où le filter persiste
         this.ctx.setTransform(1, 0, 0, 1, 0, 0);
         this.ctx.filter = 'none';
-
-        // Victory Animation
-        if (this.victoryAnimation) {
-            const winner = players[this.victoryAnimation.player];
-            if (winner) {
-                const playing = this.effectRenderer.drawVictoryAnimation(winner.x, winner.y, winner.color, this.victoryAnimation.startTime);
-                if (!playing) this.victoryAnimation = null;
-            }
-        }
 
         this.animationId = requestAnimationFrame(() => this.draw());
     }

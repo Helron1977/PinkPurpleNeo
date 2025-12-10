@@ -19,6 +19,7 @@ class Player {
         this.dashAttackCombo = false; // Dash suivi d'attaque
         // Système de fil/grappin
         this.threadCooldown = 0;
+        this.grenadeCooldown = 0; // Added cooldown
         this.threadActive = null; // {x, y, vx, vy, age}
         // Système de toile d'araignée (une par vie)
         this.webAvailable = true;
@@ -79,6 +80,31 @@ class Player {
     }
 
     update(obstacles) {
+        // Update cooldowns (ALWAYS UPDATE FIRST)
+        if (this.dashCooldown > 0) this.dashCooldown--;
+        if (this.moveCooldown > 0) this.moveCooldown--;
+        if (this.attackCooldown > 0) this.attackCooldown--;
+        if (this.threadCooldown > 0) this.threadCooldown--;
+        if (this.grenadeCooldown > 0) this.grenadeCooldown--;
+        
+        // Update victory stance grace period
+        if (this.victoryStanceTimer > 0) {
+            this.victoryStanceTimer--;
+            // Auto-exit victory stance after grace period if no input
+             if (this.victoryStanceTimer === 0) {
+                 // Optionnel: On pourrait forcer la sortie ici, mais on attend l'input joueur normalement.
+                 // Le user a dit "bloque indéfiniment", donc le timer ne descendait pas.
+             }
+        }
+
+        // Update effet de taille
+        if (this.sizeEffectTimer > 0) {
+            this.sizeEffectTimer--;
+            if (this.sizeEffectTimer === 0) {
+                this.sizeMultiplier = 1.0;
+            }
+        }
+
         // RESPAWN: Immobile et invincible pendant 3 secondes ou jusqu'à mouvement
         if (this.isRespawning) {
             this.velocity = 0;
@@ -97,20 +123,6 @@ class Player {
             this.velocity = 0;
             this.t = 0;
             return { dead: false, bounced: false };
-        }
-
-        // Update cooldowns
-        if (this.dashCooldown > 0) this.dashCooldown--;
-        if (this.moveCooldown > 0) this.moveCooldown--;
-        if (this.attackCooldown > 0) this.attackCooldown--;
-        if (this.threadCooldown > 0) this.threadCooldown--;
-        
-        // Update effet de taille
-        if (this.sizeEffectTimer > 0) {
-            this.sizeEffectTimer--;
-            if (this.sizeEffectTimer === 0) {
-                this.sizeMultiplier = 1.0;
-            }
         }
         
         // Update fil/grappin
@@ -325,8 +337,8 @@ class Player {
         }
 
         // WAKE UP from Victory Stance on any input (except pure modifiers if any)
-        // If movement key is pressed, we clear stance and process input
-        if (this.victoryStance) {
+        // Only if grace period is over
+        if (this.victoryStance && this.victoryStanceTimer <= 0) {
             if (['LEFT', 'RIGHT', 'UP', 'DOWN', 'SLAM', 'DASH', 'HIT', 'GRENADE', 'THREAD'].includes(key)) {
                 this.victoryStance = false;
             }
@@ -369,10 +381,11 @@ class Player {
         }
 
         if (key === 'GRENADE') {
-            if (this.grenadeCount > 0) {
+            if (this.grenadeCount > 0 && this.grenadeCooldown <= 0) {
                 const vx = Math.cos(this.angle) * this.velocity;
                 const vy = Math.sin(this.angle) * this.velocity + GRAVITY * this.t;
                 this.grenadeCount--;
+                this.grenadeCooldown = 30; // 0.5s delay between throws
                 return { type: 'grenade', x: this.x, y: this.y, vx: vx, vy: vy };
             }
             return;
@@ -489,6 +502,7 @@ class Player {
 
     enterVictoryStance() {
         this.victoryStance = true;
+        this.victoryStanceTimer = 30; // 0.5s grace period
         this.velocity = 0;
         this.t = 0;
     }

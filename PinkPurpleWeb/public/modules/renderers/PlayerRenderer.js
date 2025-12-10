@@ -128,9 +128,16 @@ export class PlayerRenderer {
         }
 
         // Victory spin
-        if (p.victoryStance) {
+        const isVictory = p.victoryStance || (anim && anim.type === 'victory');
+
+        if (isVictory) {
             stretch = 0;
             angle = 0;
+            if (anim && anim.type === 'victory') {
+                const t = (Date.now() - anim.startTime) / 200;
+                const jumpY = Math.abs(Math.sin(t)) * -30; // Jump up
+                ctx.translate(0, jumpY);
+            }
         }
 
         ctx.rotate(angle);
@@ -139,8 +146,8 @@ export class PlayerRenderer {
 
         // --- 2. NEON + TOON BODY ---
         const r = GAME_CONFIG.PLAYER_RADIUS;
-        const bodyColor = p.victoryStance ? '#ffd700' : p.color;
-        const glowColor = p.victoryStance ? '#ffd700' : p.color;
+        const bodyColor = isVictory ? '#ffd700' : p.color;
+        const glowColor = isVictory ? '#ffd700' : p.color;
 
         // A. Contour Noir (Stroke)
         ctx.shadowBlur = 0; // Pas de flou sur le contour interne
@@ -154,7 +161,7 @@ export class PlayerRenderer {
         // Pour le glow externe, on dessine d'abord un cercle flou derrière
         ctx.save();
         ctx.globalCompositeOperation = 'destination-over'; // Dessiner derrière
-        ctx.shadowBlur = p.victoryStance ? 40 : 25;
+        ctx.shadowBlur = isVictory ? 40 : 25;
         ctx.shadowColor = glowColor;
         ctx.fillStyle = bodyColor;
         ctx.beginPath();
@@ -232,7 +239,9 @@ export class PlayerRenderer {
             lookY = (dy / dist) * 8;
         }
 
-        if (p.victoryStance) {
+        const isVictory = p.victoryStance || (anim && anim.type === 'victory');
+
+        if (isVictory) {
             const bounce = Math.abs(Math.sin(Date.now() / 150)) * 5;
             ctx.translate(0, -bounce);
         }
@@ -240,7 +249,7 @@ export class PlayerRenderer {
         ctx.save();
         let eyeScaleY = 1;
 
-        if (p.victoryStance) {
+        if (isVictory) {
             ctx.lineWidth = 3;
             ctx.strokeStyle = '#fff';
             ctx.shadowBlur = 5;
@@ -346,8 +355,10 @@ export class PlayerRenderer {
         let bodyRotationZ = 0;
         let batVisible = true;
 
-        if (p.victoryStance) {
-             const t = Date.now() / 500;
+        const isVictory = p.victoryStance || (anim && anim.type === 'victory');
+
+        if (isVictory) {
+             const t = Date.now() / 200;
              // Arms up in V
              h1x3D = 35 * Math.cos(t);
              h1y3D = -30;
@@ -525,7 +536,7 @@ export class PlayerRenderer {
             ctx.stroke();
 
             // Hand on top (Toon)
-            ctx.fillStyle = p.victoryStance ? '#ffd700' : p.color;
+            ctx.fillStyle = isVictory ? '#ffd700' : p.color;
             ctx.beginPath(); ctx.arc(0, 0, 8, 0, Math.PI * 2); ctx.fill();
             ctx.lineWidth = 2;
             ctx.strokeStyle = '#000';

@@ -3,6 +3,7 @@ import { Renderer } from './modules/rendering.js';
 import { InputManager } from './modules/input.js';
 import { TutorialManager } from './modules/ui/TutorialManager.js';
 import { SettingsManager } from './modules/ui/SettingsManager.js';
+import { VictoryManager } from './modules/ui/VictoryManager.js';
 import { soundManager } from './modules/audio.js';
 
 window.addEventListener('load', () => {
@@ -27,6 +28,7 @@ window.addEventListener('load', () => {
     const input = new InputManager();
     const tutorial = new TutorialManager();
     const settings = new SettingsManager();
+    const victory = new VictoryManager(network);
 
     let gameLoopId;
     let currentRoomId = null;
@@ -148,6 +150,9 @@ window.addEventListener('load', () => {
             renderer.addFloatingText(event.x, event.y, "STUCK!", "#ffffff");
             renderer.playerRenderer.triggerAnimation(event.to, 'stunned', 2000, { isHit: false });
             soundManager.playTone(150, 'square', 0.3, 0.2);
+        } else if (event.type === 'victory_dance') {
+            // Géré par VictoryManager via l'événement 'game_over' ou 'victory_dance'
+            soundManager.playWin();
         }
     });
 

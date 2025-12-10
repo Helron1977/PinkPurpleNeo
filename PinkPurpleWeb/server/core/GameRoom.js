@@ -13,6 +13,8 @@ class GameRoom {
         this.grenades = []; // Active grenades
         this.lastBroadcastState = null; // For delta compression
         this.globalHitStop = 0; // Global freeze timer
+        this.isGameOver = false;
+        this.gameOverTimer = 0;
         this.generateObstacles();
     }
 
@@ -91,6 +93,16 @@ class GameRoom {
             return;
         }
 
+        // Game Over Logic
+        if (this.isGameOver) {
+            this.gameOverTimer--;
+            if (this.gameOverTimer <= 0) {
+                this.resetGame();
+                this.isGameOver = false;
+            }
+            // Continue physics to allow dancing
+        }
+
         const p1 = this.players['p1'];
         const p2 = this.players['p2'];
 
@@ -143,12 +155,18 @@ class GameRoom {
         }
 
         this.updateGrenades(p1, p2);
-        this.checkWinCondition();
+        if (!this.isGameOver) {
+            this.checkWinCondition();
+        }
     }
 
     // Helper: Handle Death
     handleDeath(victimId, victim, killer) {
-        this.scores[killer.isPlayer1 ? 'p1' : 'p2']++;
+        // Freeze score if game is over
+        if (!this.isGameOver) {
+            this.scores[killer.isPlayer1 ? 'p1' : 'p2']++;
+        }
+        
         victim.reset();
         killer.webAvailable = true;
         killer.webActive = null;
@@ -329,21 +347,24 @@ class GameRoom {
     checkWinCondition() {
         if (this.scores.p1 >= 10 || this.scores.p2 >= 10) {
             const winner = this.scores.p1 >= 10 ? 'p1' : 'p2';
-            const winnerPlayer = this.players[winner];
-            if (winnerPlayer) {
-                this.io.to(this.id).emit('event', { 
-                    type: 'victory_animation', player: winner, x: winnerPlayer.x, y: winnerPlayer.y 
-                });
-            }
+            this.isGameOver = true;
+            this.gameOverTimer = 180; // 3 seconds transition
+
             this.io.to(this.id).emit('game_over', { winner: winner });
             this.botCallbacks.onGameEnd(this.id, winner);
-            this.scores = { p1: 0, p2: 0 };
-            if (this.players['p1']) this.players['p1'].reset();
-            if (this.players['p2']) this.players['p2'].reset();
-            this.io.to(this.id).emit('score', this.scores);
-            this.generateObstacles();
-            this.io.to(this.id).emit('map_update', this.obstacles);
+            
+            // Trigger victory dance event
+            this.io.to(this.id).emit('event', { type: 'victory_dance', player: winner });
         }
+    }
+
+    resetGame() {
+        this.scores = { p1: 0, p2: 0 };
+        if (this.players['p1']) this.players['p1'].reset();
+        if (this.players['p2']) this.players['p2'].reset();
+        this.io.to(this.id).emit('score', this.scores);
+        this.generateObstacles();
+        this.io.to(this.id).emit('map_update', this.obstacles);
     }
 
     broadcastState() {
