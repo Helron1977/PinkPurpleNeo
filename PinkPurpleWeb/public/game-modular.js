@@ -3,6 +3,7 @@ import { Renderer } from './modules/rendering.js';
 import { InputManager } from './modules/input.js';
 import { TutorialManager } from './modules/ui/TutorialManager.js';
 import { SettingsManager } from './modules/ui/SettingsManager.js';
+import { soundManager } from './modules/audio.js';
 
 window.addEventListener('load', () => {
     const canvas = document.getElementById('game-canvas');
@@ -124,22 +125,29 @@ window.addEventListener('load', () => {
     network.on('game_event', (event) => {
         if (event.type === 'hit') {
             renderer.triggerHitEffect(event.from, event.to, event.damage);
+            soundManager.playHit();
         } else if (event.type === 'swing') {
             renderer.triggerSwing(event.player);
+            // Petit son de swing
+            soundManager.playTone(300, 'triangle', 0.05, 0.05);
         } else if (event.type === 'bounce') {
             renderer.triggerBounce(event.player);
+            soundManager.playBounce();
         } else if (event.type === 'grenade_explode') {
             renderer.createExplosion(event.x, event.y, '#ffaa00');
             renderer.addShake(10);
+            soundManager.playNoise(0.4, 0.4); // Boom
         } else if (event.type === 'floating_text') {
             renderer.addFloatingText(event.x, event.y, event.text, event.color);
         } else if (event.type === 'thread_hit') {
             renderer.playerRenderer.addSizeEffect(event.from, event.fromSize, 300);
             renderer.playerRenderer.addSizeEffect(event.to, event.toSize, 300);
             renderer.addFloatingText(event.x, event.y, "DRAIN!", "#00ff00");
+            soundManager.playTone(600, 'sawtooth', 0.2, 0.2);
         } else if (event.type === 'web_hit') {
             renderer.addFloatingText(event.x, event.y, "STUCK!", "#ffffff");
             renderer.playerRenderer.triggerAnimation(event.to, 'stunned', 2000, { isHit: false });
+            soundManager.playTone(150, 'square', 0.3, 0.2);
         }
     });
 
@@ -152,6 +160,9 @@ window.addEventListener('load', () => {
         
         // Start Rendering
         renderer.start();
+        
+        // Start Audio
+        soundManager.startBgMusic();
         
         // Start Input Loop
         if (!gameLoopId) gameLoop();
