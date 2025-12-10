@@ -1,226 +1,165 @@
-/**
- * PinkPurple Game - Main Entry Point
- * Orchestrates all game modules
- */
-
 import { NetworkManager } from './modules/network.js';
-import { soundManager, audioCtx } from './modules/audio.js';
-import { InputManager } from './modules/input.js';
 import { Renderer } from './modules/rendering.js';
-import { UIManager } from './modules/ui.js';
+import { InputManager } from './modules/input.js';
+import { TutorialManager } from './modules/ui/TutorialManager.js';
+import { SettingsManager } from './modules/ui/SettingsManager.js';
 
-// Initialize Socket.IO
-const socket = io();
+window.addEventListener('load', () => {
+    const canvas = document.getElementById('game-canvas');
+    const lobbyContainer = document.getElementById('lobby-container');
+    const gameUI = document.getElementById('game-ui');
+    const createBtn = document.getElementById('create-btn');
+    const joinBtn = document.getElementById('join-btn');
+    const roomCodeInput = document.getElementById('room-code-input');
+    const nameInput = document.getElementById('player-name-input');
+    const lobbyStatus = document.getElementById('lobby-status');
+    const roomDisplay = document.getElementById('room-display');
+    const shareBtn = document.getElementById('share-btn');
 
-// Initialize managers
-const network = new NetworkManager(socket);
-const ui = new UIManager();
-const canvas = document.getElementById('game-canvas');
-const renderer = new Renderer(canvas, network);
-const input = new InputManager(network, soundManager);
+    // --- MANAGER INITIALIZATION ---
+    // Make sure elements exist before initializing
+    const socket = io(); // Initialize Socket.IO connection
+    const network = new NetworkManager(socket);
+    network.setupSocketListeners(); // Setup listeners
+    
+    const renderer = new Renderer(canvas, network);
+    const input = new InputManager();
+    const tutorial = new TutorialManager();
+    const settings = new SettingsManager();
 
-// === WELCOME SCREEN / LOBBY LOGIC ===
-const welcomeScreen = document.getElementById('lobby-container');
-const gameContainer = document.getElementById('game-ui');
-const playerNameInput = document.getElementById('player-name-input');
-const createBtn = document.getElementById('create-btn');
-const joinBtn = document.getElementById('join-btn');
-const roomCodeInput = document.getElementById('room-code-input');
+    let gameLoopId;
+    let currentRoomId = null;
 
-// Load saved name
-const savedName = localStorage.getItem('pinkpurple_player_name');
-if (savedName) {
-    playerNameInput.value = savedName;
-} else {
-    // Generate random simple name: Player + Number
-    const randomName = `Player${Math.floor(Math.random() * 1000)}`;
-    playerNameInput.value = randomName;
-}
-
-// Start music on interaction
-let musicStarted = false;
-function startMusic() {
-    if (!musicStarted) {
-        if (audioCtx.state === 'suspended') audioCtx.resume();
-        soundManager.startBgMusic();
-        musicStarted = true;
-    }
-}
-
-playerNameInput.addEventListener('focus', startMusic);
-playerNameInput.addEventListener('click', startMusic);
-roomCodeInput.addEventListener('focus', startMusic);
-
-// Validate name and prepare game
-function prepareGame() {
-    const playerName = playerNameInput.value.trim();
-    if (!playerName) {
-        playerNameInput.focus();
-        // Shake animation
-        playerNameInput.style.animation = 'shake 0.5s';
-        setTimeout(() => playerNameInput.style.animation = '', 500);
-        return null;
+    // --- URL PARAMS (Auto-Join / Share) ---
+    const urlParams = new URLSearchParams(window.location.search);
+    const sharedRoom = urlParams.get('room');
+    if (sharedRoom) {
+        if(roomCodeInput) roomCodeInput.value = sharedRoom;
     }
 
-    localStorage.setItem('pinkpurple_player_name', playerName);
-    startMusic();
-    return playerName;
-}
-
-// Create Room
-createBtn.addEventListener('click', () => {
-    const name = prepareGame();
-    if (name) {
-        socket.emit('create_room', name);
+    // --- SHARE BUTTON LOGIC ---
+    if(shareBtn) {
+        shareBtn.addEventListener('click', () => {
+            if (!currentRoomId) return;
+            
+            const url = `${window.location.origin}${window.location.pathname}?room=${currentRoomId}`;
+            navigator.clipboard.writeText(url).then(() => {
+                const originalText = shareBtn.innerText;
+                shareBtn.innerText = 'COPIED!';
+                setTimeout(() => shareBtn.innerText = originalText, 2000);
+            }).catch(err => {
+                console.error('Failed to copy', err);
+                prompt("Copy this link:", url);
+            });
+        });
     }
-});
 
-// Join Room
-joinBtn.addEventListener('click', () => {
-    const name = prepareGame();
-    if (name) {
-        const code = roomCodeInput.value.trim();
-        if (code) {
-            // Send object with roomId and playerName
-            socket.emit('join_room', { roomId: code, playerName: name });
-        } else {
-            ui.setLobbyStatus("ENTER A CODE");
+    // --- GAME LOOP ---
+    function gameLoop() {
+        // 1. Send Input
+        const inputState = input.getInput();
+        
+        if (inputState.up) network.emit('input', 'UP');
+        if (inputState.down) network.emit('input', 'DOWN');
+        if (inputState.left) network.emit('input', 'LEFT');
+        if (inputState.right) network.emit('input', 'RIGHT');
+        
+        if (inputState.hit) network.emit('input', 'HIT');
+        if (inputState.slam) network.emit('input', 'SLAM');
+        if (inputState.dash) network.emit('input', 'DASH');
+        if (inputState.grenade) network.emit('input', 'GRENADE');
+        if (inputState.thread) network.emit('input', 'THREAD');
+        if (inputState.web) network.emit('input', 'WEB');
+
+        gameLoopId = requestAnimationFrame(gameLoop);
+    }
+
+    // --- EVENT LISTENERS ---
+
+    if(createBtn) {
+        createBtn.addEventListener('click', () => {
+            const name = nameInput.value || 'Player';
+            network.emit('create_room', name);
+        });
+    }
+
+    if(joinBtn) {
+        joinBtn.addEventListener('click', () => {
+            const code = roomCodeInput.value.toUpperCase();
+            const name = nameInput.value || 'Player';
+            if (code.length === 5) {
+                network.emit('join_room', { roomId: code, playerName: name });
+            } else {
+                lobbyStatus.textContent = "Invalid Code";
+            }
+        });
+    }
+
+    // --- NETWORK EVENTS ---
+
+    network.on('room_created', (roomId) => {
+        currentRoomId = roomId;
+        enterGame(roomId);
+    });
+
+    network.on('joined_room', (data) => {
+        const roomId = (typeof data === 'object' && data.roomId) ? data.roomId : data;
+        currentRoomId = roomId;
+        enterGame(roomId);
+        renderer.playIntroSequence();
+    });
+
+    network.on('error', (msg) => {
+        lobbyStatus.textContent = msg;
+    });
+
+    network.on('game_over', (data) => {
+        // Handle game over logic
+    });
+
+    network.on('map_update', (obstacles) => {
+        renderer.setObstacles(obstacles);
+    });
+
+    network.on('game_event', (event) => {
+        if (event.type === 'hit') {
+            renderer.triggerHitEffect(event.from, event.to, event.damage);
+        } else if (event.type === 'swing') {
+            renderer.triggerSwing(event.player);
+        } else if (event.type === 'bounce') {
+            renderer.triggerBounce(event.player);
+        } else if (event.type === 'grenade_explode') {
+            renderer.createExplosion(event.x, event.y, '#ffaa00');
+            renderer.addShake(10);
+        } else if (event.type === 'floating_text') {
+            renderer.addFloatingText(event.x, event.y, event.text, event.color);
+        } else if (event.type === 'thread_hit') {
+            renderer.playerRenderer.addSizeEffect(event.player, event.toSize, 300); // 5 sec (60fps)
+            renderer.addFloatingText(event.x, event.y, "DRAIN!", "#00ff00");
+        } else if (event.type === 'web_hit') {
+            renderer.addFloatingText(event.x, event.y, "STUCK!", "#ffffff");
         }
+    });
+
+    // --- HELPERS ---
+
+    function enterGame(roomId) {
+        lobbyContainer.style.display = 'none';
+        gameUI.style.display = 'block';
+        roomDisplay.textContent = `ROOM: ${roomId}`;
+        
+        // Start Rendering
+        renderer.start();
+        
+        // Start Input Loop
+        if (!gameLoopId) gameLoop();
+        
+        // Resize just in case
+        renderer.resize();
     }
+
+    // Global Resize
+    window.addEventListener('resize', () => {
+        if (renderer) renderer.resize();
+    });
 });
-
-// Add shake animation style
-const style = document.createElement('style');
-style.textContent = `
-    @keyframes shake {
-        0%, 100% { transform: translateX(0); }
-        10%, 30%, 50%, 70%, 90% { transform: translateX(-10px); }
-        20%, 40%, 60%, 80% { transform: translateX(10px); }
-    }
-`;
-document.head.appendChild(style);
-
-// Setup network event handlers
-network.on('joined_room', (data) => {
-    // Switch to game view
-    // welcomeScreen.style.display = 'none'; // Handled by ui.showGame()
-    ui.showGame();
-    ui.setRoomCode(data.roomId);
-    ui.setPlayerStatus(data.role);
-    ui.showControlsHint();
-
-    // Resume audio
-    if (audioCtx.state === 'suspended') audioCtx.resume();
-    // Music is already playing from lobby
-
-
-    // Start rendering
-    renderer.start();
-});
-
-network.on('error', (msg) => {
-    ui.setLobbyStatus(msg);
-});
-
-network.on('map_update', (obstacles) => {
-    renderer.setObstacles(obstacles);
-});
-
-network.on('game_event', (event) => {
-    const { players } = network.getState();
-
-    switch (event.type) {
-        case 'hit':
-            if (players[event.to]) {
-                renderer.createExplosion(players[event.to].x, players[event.to].y, players[event.from].color);
-                renderer.addFloatingDamage(players[event.to].x, players[event.to].y, event.damage || 10, '#ff0000');
-
-                renderer.triggerHitEffect(event.from, event.to, event.damage);
-
-                ui.flashScreen();
-                soundManager.playHit();
-            }
-            break;
-
-        case 'swing':
-            if (players[event.player]) {
-                renderer.triggerSwing(event.player);
-                // soundManager.playNoise(0.1, 1.0); // Gentle whoosh
-            }
-            break;
-
-        case 'death':
-            renderer.addShake(30);
-            soundManager.playNoise(0.5, 0.4);
-            ui.showControlsHint();
-            if (event.player && players[event.player]) {
-                renderer.addFloatingText(players[event.player].x, players[event.player].y, 'K.O.!', '#ff0000');
-            }
-            break;
-
-        case 'bounce':
-            soundManager.playBounce();
-            // Trigger visual squash
-            if (players[event.player]) {
-                renderer.triggerBounce(event.player);
-            }
-            break;
-
-        case 'grenade_explode':
-            renderer.addShake(40);
-            soundManager.playNoise(0.6, 0.5);
-            soundManager.playTone(60, 'sine', 0.4, 0.2);
-            renderer.addFloatingText(event.x, event.y, 'BOOM!', '#ffff00');
-            break;
-
-        case 'grenade_hit':
-            soundManager.playHit();
-            if (event.target && players[event.target]) {
-                renderer.addFloatingDamage(players[event.target].x, players[event.target].y, event.damage || 10, '#ff8800');
-            }
-            break;
-
-        case 'thread_hit':
-            if (players[event.to]) {
-                renderer.addFloatingText(players[event.to].x, players[event.to].y, 'ENERGY DRAIN!', '#00ffff');
-            }
-            // Mettre à jour les effets de taille persistants
-            if (event.fromSize !== undefined) {
-                renderer.playerRenderer.addSizeEffect(event.from, event.fromSize, 300);
-            }
-            if (event.toSize !== undefined) {
-                renderer.playerRenderer.addSizeEffect(event.to, event.toSize, 300);
-            }
-            break;
-
-        case 'web_hit':
-            if (players[event.to]) {
-                renderer.addFloatingText(players[event.to].x, players[event.to].y, 'TRAPPED!', '#ff00ff');
-            }
-            break;
-
-        case 'victory_animation':
-            renderer.victoryAnimation = {
-                player: event.player,
-                startTime: Date.now()
-            };
-            break;
-    }
-});
-
-network.on('game_over', (data) => {
-    soundManager.playWin();
-    ui.showGameOver(data.winner);
-});
-
-// Setup input handlers
-input.setupKeyboard();
-input.setupTouchControls();
-
-// Setup socket listeners
-network.setupSocketListeners();
-
-// Show initial controls hint
-ui.showControlsHint();
-
-console.log('🎮 PinkPurple Game initialized!');

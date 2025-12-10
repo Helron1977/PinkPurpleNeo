@@ -13,6 +13,11 @@ export class NetworkManager {
         this.grenades = [];
         this.explosions = [];
         this.eventHandlers = {};
+
+        // Bridge local events to socket
+        this.on('create_room', (name) => this.socket.emit('create_room', name));
+        this.on('join_room', (data) => this.socket.emit('join_room', data));
+        this.on('input', (data) => this.socket.emit('input', data));
     }
 
     // Register event handlers

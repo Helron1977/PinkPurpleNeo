@@ -85,6 +85,11 @@
             <button id="join-btn" class="neon-btn" style="border-color: var(--secondary-color); margin-top: 10px;">JOIN</button>
 
             <p id="lobby-status" style="color: #ff0055; min-height: 24px; font-weight: bold; margin-top: 10px;"></p>
+            
+            <div style="display: flex; gap: 10px; margin-top: 20px;">
+                <button id="tutorial-btn" class="neon-btn small-btn" style="width: auto; padding: 10px 20px;">?</button>
+                <button id="settings-btn" class="neon-btn small-btn" style="width: auto; padding: 10px 20px;">⚙️</button>
+            </div>
         </div>
     </div>
 
@@ -92,6 +97,8 @@
     <div id="game-ui" style="display: none;">
         <div id="ui-layer">
             <!-- Top Bar: Controls Hint & Room Info -->
+            <button id="share-btn" class="neon-btn small-btn" style="position: absolute; top: 20px; right: 20px; width: auto; padding: 10px 20px; pointer-events: auto; z-index: 100;">INVITE</button>
+
             <div
                 style="position: absolute; top: 20px; width: 100%; display: flex; justify-content: center; pointer-events: none;">
             <div id="controls-hint">
@@ -130,6 +137,41 @@
     </div>
 
     <canvas id="game-canvas"></canvas>
+
+    <!-- Tutorial Modal -->
+    <div id="tutorial-modal" class="modal-overlay" style="display: none;">
+        <div class="modal-content">
+            <h2 class="neon-text">HOW TO PLAY</h2>
+            <div class="tutorial-viewport">
+                <canvas id="tutorial-canvas" width="300" height="300"></canvas>
+            </div>
+            <p id="tutorial-text" class="tutorial-desc"></p>
+            
+            <div class="modal-actions">
+                <button id="tutorial-next-btn" class="neon-btn">NEXT</button>
+                <button id="tutorial-close-btn" class="neon-btn" style="display: none;">PLAY</button>
+            </div>
+            
+            <label class="checkbox-container">
+                <input type="checkbox" id="tutorial-dont-show"> Do not show again
+            </label>
+        </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div id="settings-modal" class="modal-overlay" style="display: none;">
+        <div class="modal-content settings-content">
+            <h2 class="neon-text">CONTROLS</h2>
+            <div id="keys-list" class="keys-list">
+                <!-- Populated by JS -->
+            </div>
+            
+            <div class="modal-actions">
+                <button id="settings-reset-btn" class="neon-btn" style="border-color: #ff0055;">RESET</button>
+                <button id="settings-save-btn" class="neon-btn">SAVE & CLOSE</button>
+            </div>
+        </div>
+    </div>
 
     <script src="/socket.io/socket.io.js"></script>
     <script type="module" src="game-modular.js"></script>

@@ -193,6 +193,47 @@ export class EffectRenderer {
         }
     }
 
+    drawAnnouncement(text, subtext, life) {
+        const ctx = this.ctx;
+        ctx.save();
+        const cx = GAME_CONFIG.WIDTH / 2;
+        const cy = GAME_CONFIG.HEIGHT / 2;
+        
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        
+        // Easing pour l'arrivée et le départ
+        // scale: starts big, goes normal, goes big
+        const scale = 1 + Math.pow(1 - life, 2); 
+        const alpha = Math.min(1, Math.sin(life * Math.PI)); // Fade in/out
+        
+        ctx.translate(cx, cy);
+        ctx.scale(scale, scale);
+        ctx.globalAlpha = alpha;
+        
+        // Main Text
+        ctx.font = '900 120px Orbitron';
+        ctx.fillStyle = '#fff';
+        ctx.shadowBlur = 30;
+        ctx.shadowColor = COLORS.PLAYER1_COLOR; // Cyan glow
+        ctx.lineWidth = 8;
+        ctx.strokeStyle = '#000';
+        
+        ctx.strokeText(text, 0, -20);
+        ctx.fillText(text, 0, -20);
+        
+        // Subtext
+        if (subtext) {
+            ctx.font = 'bold 60px Orbitron';
+            ctx.fillStyle = COLORS.PLAYER2_COLOR; // Purple
+            ctx.shadowColor = COLORS.PLAYER2_COLOR;
+            ctx.strokeText(subtext, 0, 80);
+            ctx.fillText(subtext, 0, 80);
+        }
+        
+        ctx.restore();
+    }
+
     drawVictoryAnimation(x, y, playerColor, startTime) {
         const ctx = this.ctx;
         const time = Date.now() / 1000;

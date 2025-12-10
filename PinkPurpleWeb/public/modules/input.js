@@ -1,35 +1,57 @@
-/**
- * Input Module
- * Handles keyboard and touch controls
- */
-
 import { CONTROLS } from './constants.js';
 
 export class InputManager {
-    constructor(networkManager, soundManager) {
-        this.network = networkManager;
-        this.sound = soundManager;
+    constructor() {
         this.keys = {};
-        this.touchControls = null;
-        this.joystickActive = false;
-        this.joystickCenter = { x: 0, y: 0 };
-        this.joystickTouchId = null;
-        this.lastJoystickAction = null;
+        this.touchInput = {
+            up: false,
+            down: false,
+            left: false,
+            right: false,
+            action: null // 'HIT', 'SLAM', 'DASH', etc.
+        };
+        
+        // --- 1. CONFIGURABLE CONTROLS ---
+        this.activeControls = { ...CONTROLS };
+        
+        // Load custom controls from storage
+        const saved = localStorage.getItem('player_controls');
+        if (saved) {
+            try {
+                const parsed = JSON.parse(saved);
+                this.activeControls = { ...this.activeControls, ...parsed };
+            } catch(e) { console.error('Error loading controls', e); }
+        }
+
+        // Listen for updates from SettingsManager
+        window.addEventListener('controls_updated', (e) => {
+            this.activeControls = e.detail;
+        });
+
+        this.setupKeyboard();
+        this.setupActionJoystick(); // Right Joystick
+        this.setupMovementJoystick(); // Left Joystick
     }
 
-    // Setup keyboard controls
     setupKeyboard() {
         window.addEventListener('keydown', (e) => {
-            if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) {
-                e.preventDefault();
-            }
+            // Ignore if typing in an input field (Name, Code)
+            if (e.target.tagName === 'INPUT') return;
 
-            if (this.keys[e.code]) return;
             this.keys[e.code] = true;
-
-            const action = this.getActionFromKey(e.code);
-            if (action) {
-                this.handleAction(action);
+            
+            // Prevent scrolling for game keys
+            const gameKeys = [
+                ...this.activeControls.UP,
+                ...this.activeControls.DOWN,
+                ...this.activeControls.LEFT,
+                ...this.activeControls.RIGHT,
+                ...this.activeControls.HIT,
+                'Space'
+            ];
+            
+            if (gameKeys.includes(e.code)) {
+                e.preventDefault();
             }
         });
 
@@ -38,351 +60,238 @@ export class InputManager {
         });
     }
 
-    // Map key code to action
-    getActionFromKey(code) {
-        if (CONTROLS.LEFT.includes(code)) return 'LEFT';
-        if (CONTROLS.RIGHT.includes(code)) return 'RIGHT';
-        if (CONTROLS.UP.includes(code)) return 'UP';
-        if (CONTROLS.DOWN && CONTROLS.DOWN.includes(code)) return 'DOWN'; // Ensure DOWN exists in constants
-        if (['ArrowDown', 'KeyS'].includes(code)) return 'DOWN'; // Fallback
-        if (CONTROLS.SLAM.includes(code)) return 'SLAM';
-        if (CONTROLS.HIT.includes(code)) return 'HIT';
-        if (CONTROLS.DASH.includes(code)) return 'DASH';
-        if (CONTROLS.GRENADE.includes(code)) return 'GRENADE';
-        if (CONTROLS.THREAD && CONTROLS.THREAD.includes(code)) return 'THREAD';
-        if (CONTROLS.WEB && CONTROLS.WEB.includes(code)) return 'WEB';
-        return null;
-    }
+    // --- LEFT JOYSTICK (Movement) ---
+    setupMovementJoystick() {
+        const zone = document.getElementById('joystick-zone');
+        const knob = document.getElementById('joystick-knob');
+        
+        if (!zone || !knob) return;
 
-    // Handle action (send to server + play sound)
-    handleAction(action) {
-        this.network.sendInput(action);
-
-        // Local audio feedback
-        if (action === 'UP') this.sound.playJump();
-        if (action === 'DASH') this.sound.playDash();
-        if (action === 'SLAM') this.sound.playNoise(0.2, 0.4);
-        if (action === 'GRENADE') this.sound.playTone(400, 'square', 0.1, 0.1);
-    }
-
-    // Setup touch controls
-    setupTouchControls() {
-        const touchControlsEl = document.getElementById('touch-controls');
-        if (!touchControlsEl) return;
-
-        this.touchControls = {
-            container: touchControlsEl,
-            joystickZone: document.getElementById('joystick-zone'),
-            joystickKnob: document.getElementById('joystick-knob'),
-            actionJoystickZone: document.getElementById('action-joystick-zone'),
-            actionJoystickKnob: document.getElementById('action-joystick-knob')
+        let startX, startY;
+        
+        const handleStart = (e) => {
+            // e.preventDefault(); // Don't prevent default everywhere to allow scroll if needed? No, game needs focus.
+            const touch = e.touches ? e.touches[0] : e;
+            const rect = zone.getBoundingClientRect();
+            const centerX = rect.left + rect.width / 2;
+            const centerY = rect.top + rect.height / 2;
+            
+            startX = centerX;
+            startY = centerY;
+            this.updateJoystick(touch, knob, startX, startY, rect.width / 2);
         };
 
-        // Show on touch devices
-        if ('ontouchstart' in window || navigator.maxTouchPoints > 0) {
-            touchControlsEl.style.display = 'flex';
-            const controlsHint = document.getElementById('controls-hint');
-            if (controlsHint) controlsHint.style.display = 'none';
-        }
+        const handleMove = (e) => {
+            if (e.cancelable) e.preventDefault(); // Prevent scrolling on joystick
+            const touch = e.touches ? e.touches[0] : e;
+            this.updateJoystick(touch, knob, startX, startY, zone.offsetWidth / 2);
+        };
 
-        this.setupJoystick();
-        this.setupActionJoystick();
+        const handleEnd = (e) => {
+            if (e.cancelable) e.preventDefault();
+            knob.style.transform = `translate(-50%, -50%)`;
+            this.touchInput.up = false;
+            this.touchInput.down = false;
+            this.touchInput.left = false;
+            this.touchInput.right = false;
+        };
+
+        zone.addEventListener('touchstart', handleStart, { passive: false });
+        zone.addEventListener('touchmove', handleMove, { passive: false });
+        zone.addEventListener('touchend', handleEnd, { passive: false });
     }
 
-    // Setup joystick
-    setupJoystick() {
-        const { joystickZone, joystickKnob } = this.touchControls;
+    updateJoystick(touch, knob, startX, startY, maxDist) {
+        const dx = touch.clientX - startX;
+        const dy = touch.clientY - startY;
+        const dist = Math.min(Math.sqrt(dx * dx + dy * dy), maxDist);
+        const angle = Math.atan2(dy, dx);
 
-        joystickZone.addEventListener('touchstart', (e) => {
-            e.preventDefault();
-            const touch = e.changedTouches[0];
-            this.joystickTouchId = touch.identifier;
-            this.joystickActive = true;
-            this.lastJoystickAction = null;
+        const moveX = Math.cos(angle) * dist;
+        const moveY = Math.sin(angle) * dist;
 
-            const rect = joystickZone.getBoundingClientRect();
-            this.joystickCenter = {
-                x: rect.left + rect.width / 2,
-                y: rect.top + rect.height / 2
-            };
+        knob.style.transform = `translate(calc(-50% + ${moveX}px), calc(-50% + ${moveY}px))`;
 
-            this.updateJoystick(touch);
-        }, { passive: false });
+        // Reset
+        this.touchInput.up = false;
+        this.touchInput.down = false;
+        this.touchInput.left = false;
+        this.touchInput.right = false;
 
-        joystickZone.addEventListener('touchmove', (e) => {
-            e.preventDefault();
-            if (!this.joystickActive) return;
-
-            for (let i = 0; i < e.changedTouches.length; i++) {
-                if (e.changedTouches[i].identifier === this.joystickTouchId) {
-                    this.updateJoystick(e.changedTouches[i]);
-                    break;
-                }
+        // Deadzone
+        if (dist > 10) {
+            // Priority to horizontal movement
+            if (Math.abs(dx) > Math.abs(dy) * 0.5) {
+                if (dx > 0) this.touchInput.right = true;
+                else this.touchInput.left = true;
             }
-        }, { passive: false });
-
-        joystickZone.addEventListener('touchend', (e) => {
-            e.preventDefault();
-            for (let i = 0; i < e.changedTouches.length; i++) {
-                if (e.changedTouches[i].identifier === this.joystickTouchId) {
-                    this.resetJoystick();
-                    break;
-                }
-            }
-        }, { passive: false });
-    }
-
-    updateJoystick(touch) {
-        const { joystickKnob } = this.touchControls;
-        const maxDist = 50;
-        const dx = touch.clientX - this.joystickCenter.x;
-        const dy = touch.clientY - this.joystickCenter.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-
-        const constrainedDist = Math.min(dist, maxDist);
-        const moveX = (dx / dist) * constrainedDist;
-        const moveY = (dy / dist) * constrainedDist;
-
-        joystickKnob.style.transform = `translate(calc(-50% + ${moveX}px), calc(-50% + ${moveY}px))`;
-
-        let currentAction = null;
-
-        if (dist > 15) {
-            const absX = Math.abs(dx);
-            const absY = Math.abs(dy);
-
-            const horizontalThreshold = 20;
-            const verticalThreshold = 25;
-
-            if (absX > horizontalThreshold) {
-                currentAction = dx > 0 ? 'RIGHT' : 'LEFT';
-            } else if (dy < -verticalThreshold && absX < horizontalThreshold) {
-                currentAction = 'UP';
-            } else if (dy > verticalThreshold && absX < horizontalThreshold) {
-                currentAction = 'DOWN';
-            } else {
-                const angle = Math.atan2(dy, dx);
-                if (angle > -Math.PI / 3 && angle < Math.PI / 3) {
-                    currentAction = 'RIGHT';
-                } else if (angle > -2 * Math.PI / 3 && angle < -Math.PI / 3) {
-                    currentAction = 'UP';
-                } else if (angle > Math.PI / 3 && angle < 2 * Math.PI / 3) {
-                    currentAction = 'DOWN';
-                } else {
-                    currentAction = 'LEFT';
-                }
+            
+            // Vertical check (independent)
+            if (Math.abs(dy) > Math.abs(dx) * 0.5) {
+                if (dy > 0) this.touchInput.down = true;
+                else this.touchInput.up = true;
             }
         }
-
-        if (currentAction !== this.lastJoystickAction) {
-            if (currentAction) {
-                this.handleAction(currentAction);
-            }
-            this.lastJoystickAction = currentAction;
-        }
     }
 
-    resetJoystick() {
-        const { joystickKnob } = this.touchControls;
-        this.joystickActive = false;
-        this.joystickTouchId = null;
-        this.lastJoystickAction = null;
-        joystickKnob.style.transform = 'translate(-50%, -50%)';
-    }
-
-    // Setup action joystick (6 secteurs pour les actions)
+    // --- RIGHT JOYSTICK (Actions) ---
     setupActionJoystick() {
-        const { actionJoystickZone, actionJoystickKnob } = this.touchControls;
-        if (!actionJoystickZone) return;
+        const zone = document.getElementById('action-joystick-zone');
+        const knob = document.getElementById('action-joystick-knob');
+        
+        if (!zone || !knob) return;
 
-        // Placement logique des actions :
-        // - Centre : HIT (réactif immédiatement)
-        // - Droite (0°) : DASH
-        // - Haut (90°) : GRENADE
-        // - Gauche (180°) : THREAD
-        // - Bas-gauche (225°) : WEB
-        // - Bas (270°) : SLAM
-        this.actionJoystickActive = false;
-        this.actionJoystickTouchId = null;
-        this.lastActionJoystickAction = null;
-        this.actionJoystickDirectionStartTime = null; // Pour le délai avant sélection d'une direction
-        this.actionJoystickDirectionDelay = 150; // 150ms de délai avant de sélectionner une direction
-        this.actionJoystickWasAtCenter = false; // Track si on était au centre
+        let startX, startY;
+        this.actionJoystickDirectionStartTime = null;
+        this.actionJoystickDirectionDelay = 150; // ms
+        this.actionJoystickWasAtCenter = true;
 
-        actionJoystickZone.addEventListener('touchstart', (e) => {
-            e.preventDefault();
-            const touch = e.changedTouches[0];
-            this.actionJoystickTouchId = touch.identifier;
-            this.actionJoystickActive = true;
-            this.lastActionJoystickAction = null;
-            this.actionJoystickDirectionStartTime = null;
+        const actions = ['DASH', 'GRENADE', 'THREAD', 'WEB', 'SLAM', 'SLAM']; // 6 sectors
+        const actionIcons = ['⚡', '💣', '🧵', '🕸️', '⬇️', '⬇️']; // Icons matching angles
 
-            const rect = actionJoystickZone.getBoundingClientRect();
-            this.actionJoystickCenter = {
-                x: rect.left + rect.width / 2,
-                y: rect.top + rect.height / 2
-            };
-
-            // Calculer la distance initiale pour détecter si on est au centre
-            const dx = touch.clientX - this.actionJoystickCenter.x;
-            const dy = touch.clientY - this.actionJoystickCenter.y;
+        const handleStart = (e) => {
+            const touch = e.touches ? e.touches[0] : e;
+            const rect = zone.getBoundingClientRect();
+            startX = rect.left + rect.width / 2;
+            startY = rect.top + rect.height / 2;
+            
+            // Initial check for center tap (HIT)
+            const dx = touch.clientX - startX;
+            const dy = touch.clientY - startY;
             const dist = Math.sqrt(dx * dx + dy * dy);
-            const centerRadius = 50 * 0.3; // 30% du rayon max pour le centre
+            const centerRadius = rect.width * 0.3;
 
-            // Si on touche directement le centre, déclencher HIT immédiatement
             if (dist < centerRadius) {
-                this.handleAction('HIT');
-                actionJoystickKnob.textContent = '⚔️';
+                this.touchInput.action = 'HIT';
+                knob.textContent = '⚔️';
                 this.actionJoystickWasAtCenter = true;
-                this.lastActionJoystickAction = 'HIT';
             } else {
-                // Sinon, démarrer le timer pour le délai de direction
                 this.actionJoystickDirectionStartTime = Date.now();
                 this.actionJoystickWasAtCenter = false;
             }
 
-            this.updateActionJoystick(touch, actionJoystickKnob);
-        }, { passive: false });
+            this.updateActionJoystick(touch, knob, startX, startY, rect.width / 2, actions, actionIcons);
+        };
 
-        actionJoystickZone.addEventListener('touchmove', (e) => {
-            e.preventDefault();
-            if (!this.actionJoystickActive) return;
+        const handleMove = (e) => {
+            if (e.cancelable) e.preventDefault();
+            const touch = e.touches ? e.touches[0] : e;
+            this.updateActionJoystick(touch, knob, startX, startY, zone.offsetWidth / 2, actions, actionIcons);
+        };
 
-            for (let i = 0; i < e.changedTouches.length; i++) {
-                if (e.changedTouches[i].identifier === this.actionJoystickTouchId) {
-                    this.updateActionJoystick(e.changedTouches[i], actionJoystickKnob);
-                    break;
-                }
-            }
-        }, { passive: false });
+        const handleEnd = (e) => {
+            if (e.cancelable) e.preventDefault();
+            knob.style.transform = `translate(-50%, -50%)`;
+            knob.textContent = '⚔️';
+            this.touchInput.action = null; // Release action
+            this.actionJoystickDirectionStartTime = null;
+        };
 
-        actionJoystickZone.addEventListener('touchend', (e) => {
-            e.preventDefault();
-            for (let i = 0; i < e.changedTouches.length; i++) {
-                if (e.changedTouches[i].identifier === this.actionJoystickTouchId) {
-                    this.resetActionJoystick(actionJoystickKnob);
-                    break;
-                }
-            }
-        }, { passive: false });
+        zone.addEventListener('touchstart', handleStart, { passive: false });
+        zone.addEventListener('touchmove', handleMove, { passive: false });
+        zone.addEventListener('touchend', handleEnd, { passive: false });
     }
 
-    updateActionJoystick(touch, knob) {
-        const maxDist = 50;
-        const dx = touch.clientX - this.actionJoystickCenter.x;
-        const dy = touch.clientY - this.actionJoystickCenter.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
+    updateActionJoystick(touch, knob, startX, startY, maxDist, actions, actionIcons) {
+        const dx = touch.clientX - startX;
+        const dy = touch.clientY - startY;
+        const dist = Math.min(Math.sqrt(dx * dx + dy * dy), maxDist);
+        const angle = Math.atan2(dy, dx); // -PI to PI
 
-        const constrainedDist = Math.min(dist, maxDist);
-        const moveX = (dx / dist) * constrainedDist;
-        const moveY = (dy / dist) * constrainedDist;
+        const moveX = Math.cos(angle) * dist;
+        const moveY = Math.sin(angle) * dist;
 
         knob.style.transform = `translate(calc(-50% + ${moveX}px), calc(-50% + ${moveY}px))`;
 
-        let currentAction = null;
-        let currentIcon = '⚔️';
-
-        // Rayon du centre pour HIT (30% du rayon max)
         const centerRadius = maxDist * 0.3;
-        
+
         if (dist < centerRadius) {
-            // Au centre : HIT (réactif immédiatement, pas de délai)
-            currentAction = 'HIT';
-            currentIcon = '⚔️';
-            // Réinitialiser le timer de direction si on revient au centre
+            // CENTER: HIT
+            this.touchInput.action = 'HIT';
+            knob.textContent = '⚔️';
             this.actionJoystickDirectionStartTime = null;
             this.actionJoystickWasAtCenter = true;
-        } else if (dist > 20) {
-            // Si on quitte le centre pour aller vers une direction, démarrer le timer
+        } else {
+            // SECTOR LOGIC
             if (this.actionJoystickWasAtCenter && !this.actionJoystickDirectionStartTime) {
                 this.actionJoystickDirectionStartTime = Date.now();
             }
-            // Si on n'a pas encore de timer (touché directement en direction), le démarrer
-            if (!this.actionJoystickDirectionStartTime) {
-                this.actionJoystickDirectionStartTime = Date.now();
-            }
             this.actionJoystickWasAtCenter = false;
+
+            // Determine sector
+            // 0 is Right. PI/2 is Down. -PI/2 is Up. PI is Left.
+            // We want: Right (0), Up (-PI/2), Left (PI), Down (PI/2) and diagonals
             
-            // En direction : vérifier le délai avant de sélectionner
+            // Normalize angle 0 to 2PI for easier math
+            let normAngle = angle;
+            if (normAngle < 0) normAngle += 2 * Math.PI;
+            
+            // 6 Sectors: 60 degrees each (PI/3)
+            // Offset by 30 deg (PI/6) so Right is centered at 0
+            const sectorIndex = Math.floor((normAngle + Math.PI / 6) / (Math.PI / 3)) % 6;
+            
+            // Check delay
             const now = Date.now();
+            if (!this.actionJoystickDirectionStartTime) this.actionJoystickDirectionStartTime = now;
             
-            // Vérifier si le délai est écoulé
-            const timeSinceDirectionStart = now - this.actionJoystickDirectionStartTime;
-            
-            if (timeSinceDirectionStart >= this.actionJoystickDirectionDelay) {
-                // Calculer l'angle (0° = droite, sens horaire)
-                let angle = Math.atan2(dy, dx);
-                // Normaliser entre 0 et 2π
-                if (angle < 0) angle += 2 * Math.PI;
-                
-                // Convertir en degrés pour faciliter la logique
-                const angleDeg = (angle * 180) / Math.PI;
-                
-                // Déterminer l'action selon l'angle (avec des zones spécifiques)
-                // Droite (315-45°) : DASH
-                // Haut (45-135°) : GRENADE
-                // Gauche (135-225°) : THREAD
-                // Bas-gauche (225-270°) : WEB
-                // Bas (270-315°) : SLAM
-                
-                if (angleDeg >= 315 || angleDeg < 45) {
-                    // Droite
-                    currentAction = 'DASH';
-                    currentIcon = '⚡';
-                } else if (angleDeg >= 45 && angleDeg < 135) {
-                    // Haut
-                    currentAction = 'GRENADE';
-                    currentIcon = '💣';
-                } else if (angleDeg >= 135 && angleDeg < 225) {
-                    // Gauche
-                    currentAction = 'THREAD';
-                    currentIcon = '🧵';
-                } else if (angleDeg >= 225 && angleDeg < 270) {
-                    // Bas-gauche
-                    currentAction = 'WEB';
-                    currentIcon = '🕸️';
-                } else {
-                    // Bas (270-315°)
-                    currentAction = 'SLAM';
-                    currentIcon = '⬇️';
-                }
+            if (now - this.actionJoystickDirectionStartTime >= this.actionJoystickDirectionDelay) {
+                this.touchInput.action = actions[sectorIndex];
+                knob.textContent = actionIcons[sectorIndex];
             } else {
-                // Délai pas encore écoulé, ne pas sélectionner d'action
-                // Mais afficher quand même l'icône prévue pour le feedback visuel
-                let angle = Math.atan2(dy, dx);
-                if (angle < 0) angle += 2 * Math.PI;
-                const angleDeg = (angle * 180) / Math.PI;
-                
-                if (angleDeg >= 315 || angleDeg < 45) {
-                    currentIcon = '⚡';
-                } else if (angleDeg >= 45 && angleDeg < 135) {
-                    currentIcon = '💣';
-                } else if (angleDeg >= 135 && angleDeg < 225) {
-                    currentIcon = '🧵';
-                } else if (angleDeg >= 225 && angleDeg < 270) {
-                    currentIcon = '🕸️';
-                } else {
-                    currentIcon = '⬇️';
-                }
+                // Show intent but don't trigger yet
+                knob.textContent = actionIcons[sectorIndex];
             }
-        }
-
-        // Mettre à jour l'icône du knob
-        knob.textContent = currentIcon;
-
-        // Déclencher l'action si elle a changé ET si le délai est respecté
-        if (currentAction && currentAction !== this.lastActionJoystickAction) {
-            this.lastActionJoystickAction = currentAction;
-            this.handleAction(currentAction);
         }
     }
 
-    resetActionJoystick(knob) {
-        this.actionJoystickActive = false;
-        this.lastActionJoystickAction = null;
-        this.actionJoystickDirectionStartTime = null;
-        this.actionJoystickWasAtCenter = false;
-        knob.style.transform = 'translate(-50%, -50%)';
-        knob.textContent = '⚔️';
+    // --- MAIN API ---
+    getInput() {
+        let input = {
+            up: false,
+            down: false,
+            left: false,
+            right: false,
+            slam: false,
+            hit: false,
+            dash: false,
+            grenade: false,
+            thread: false,
+            web: false
+        };
+
+        // 1. Keyboard Configurable
+        const check = (action) => {
+            const keys = this.activeControls[action];
+            return keys && keys.some(k => this.keys[k]);
+        };
+
+        if (check('UP')) input.up = true;
+        if (check('DOWN')) input.down = true;
+        if (check('LEFT')) input.left = true;
+        if (check('RIGHT')) input.right = true;
+        if (check('HIT')) input.hit = true;
+        if (check('SLAM')) input.slam = true;
+        if (check('DASH')) input.dash = true;
+        if (check('GRENADE')) input.grenade = true;
+        if (check('THREAD')) input.thread = true;
+        if (check('WEB')) input.web = true;
+
+        // 2. Touch (Merge)
+        if (this.touchInput.up) input.up = true;
+        if (this.touchInput.down) input.down = true;
+        if (this.touchInput.left) input.left = true;
+        if (this.touchInput.right) input.right = true;
+        
+        if (this.touchInput.action) {
+            const act = this.touchInput.action;
+            if (act === 'HIT') input.hit = true;
+            else if (act === 'SLAM') input.slam = true;
+            else if (act === 'DASH') input.dash = true;
+            else if (act === 'GRENADE') input.grenade = true;
+            else if (act === 'THREAD') input.thread = true;
+            else if (act === 'WEB') input.web = true;
+        }
+
+        return input;
     }
 }
