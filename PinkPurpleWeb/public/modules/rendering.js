@@ -7,11 +7,13 @@ import { ComboSystem } from './ComboSystem.js';
 import { WorldRenderer } from './renderers/WorldRenderer.js';
 import { PlayerRenderer } from './renderers/PlayerRenderer.js';
 import { EffectRenderer } from './renderers/EffectRenderer.js';
+import { FatalityRenderer } from './renderers/FatalityRenderer.js';
+import { soundManager } from './audio.js';
 
 export class Renderer {
     constructor(canvas, networkManager) {
         this.canvas = canvas;
-        this.ctx = canvas.getContext('2d');
+        this.ctx = canvas.getContext('2d', { alpha: false }); // Optimize
         this.network = networkManager;
         this.scale = 1;
         this.animationId = null;
@@ -21,6 +23,7 @@ export class Renderer {
         this.worldRenderer = new WorldRenderer(this.ctx);
         this.effectRenderer = new EffectRenderer(this.ctx, this.comboSystem);
         this.playerRenderer = new PlayerRenderer(this.ctx);
+        this.fatalityRenderer = new FatalityRenderer(this.canvas, this.effectRenderer, soundManager);
 
         // Camera / Zoom effects
         this.cameraZoom = 1.0;
@@ -34,19 +37,25 @@ export class Renderer {
         this.frozenPlayers = null;
         this.frameCounter = 0;
 
-        this.victoryAnimation = null;
-        
         // Intro Sequence
         this.introState = {
             active: false,
             startTime: 0,
             duration: 2000
         };
-        
+
         // Announcement
         this.announcement = null;
 
         this.setupCanvas();
+    }
+
+    reset() {
+        this.fatalitySequence = null;
+        this.slowMotionFactor = 1.0;
+        this.cameraZoom = 1.0;
+        this.hitStopTimer = 0;
+        this.frozenPlayers = null;
     }
 
     setupCanvas() {
@@ -73,7 +82,7 @@ export class Renderer {
         this.introState.startTime = Date.now();
         this.cameraZoom = 0.5; // Start zoomed out far
         this.targetZoom = 1.0;
-        
+
         // Sequence: "READY?" after 500ms, "FIGHT!" after 1500ms
         setTimeout(() => this.triggerAnnouncement("READY ?", "", 1000), 500);
         setTimeout(() => this.triggerAnnouncement("FIGHT !", "GO GO GO", 1000), 1500);
@@ -91,7 +100,7 @@ export class Renderer {
 
     triggerBounce(playerId) {
         this.playerRenderer.triggerAnimation(playerId, 'deformation', 300);
-        
+
         const state = this.network.getState();
         const p = state.players[playerId];
         if (p) {
@@ -120,7 +129,7 @@ export class Renderer {
         if (!attacker || !victim) return;
 
         this.frozenPlayers = JSON.parse(JSON.stringify(state.players));
-        this.hitStopDuration = 90; // 1.5s
+        this.hitStopDuration = 12; // Was 90 - 1.5s is too long. 12 frames = 0.2s (Snappy)
         this.hitStopTimer = this.hitStopDuration;
 
         this.cameraFocus = {
@@ -130,9 +139,9 @@ export class Renderer {
         this.cameraZoom = 2.0;
         this.slowMotionFactor = 0.05;
 
-        const attackDirection = attacker.lastAction === 'UP' ? 'up' : 
-                                (attacker.lastFacing === 1 ? 'right' : 'left');
-        
+        const attackDirection = attacker.lastAction === 'UP' ? 'up' :
+            (attacker.lastFacing === 1 ? 'right' : 'left');
+
         this.playerRenderer.triggerAnimation(attackerId, 'bat_swing', 4000, {
             distinct: true,
             direction: attackDirection
@@ -169,6 +178,15 @@ export class Renderer {
 
     // --- MAIN LOOP ---
 
+    playFatalityAnimation(winnerId, victimId, weapon) {
+        // Delegate to new FatalityRenderer
+        this.fatalityRenderer.start(weapon, winnerId, victimId);
+        // Force slow mo immediately
+        this.slowMotionFactor = 0.1;
+    }
+
+    // --- MAIN LOOP ---
+
     draw() {
         const { players, scores, grenades, explosions } = this.network.getState();
 
@@ -188,7 +206,7 @@ export class Renderer {
         if (this.hitStopTimer > 0) {
             this.hitStopTimer--;
             if (this.frozenPlayers) renderPlayers = this.frozenPlayers;
-            
+
             // Activer le filter seulement pour les 5 premières frames du hit stop
             if (this.hitStopTimer > this.hitStopDuration - 5) {
                 useInvertFilter = true;
@@ -198,30 +216,27 @@ export class Renderer {
             this.frameCounter++;
             this.frozenPlayers = null;
             this.targetZoom = 1.0;
-            this.slowMotionFactor = 1.0;
+            this.slowMotionFactor = (this.fatalityRenderer.active) ? 0.05 : 1.0;
         }
-        
+
         // S'assurer que le filter est réinitialisé avant les transformations
         this.ctx.filter = 'none';
 
         // Camera Logic
         // 1. Intro Override (PRIORITY 1)
         if (this.introState.active) {
+            // ... (intro logic kept implicitly by replacement overlap if incomplete) ...
             const elapsed = Date.now() - this.introState.startTime;
             if (elapsed < this.introState.duration) {
-                // Easing cubic
                 const t = elapsed / this.introState.duration;
-                const ease = 1 - Math.pow(1 - t, 3); // Fast out, slow in
-                
-                // Zoom from 0.4 to 1.0
+                const ease = 1 - Math.pow(1 - t, 3);
                 this.cameraZoom = 0.4 + (0.6 * ease);
-                
                 this.cameraFocus.x = GAME_CONFIG.WIDTH / 2;
                 this.cameraFocus.y = GAME_CONFIG.HEIGHT / 2;
             } else {
                 this.introState.active = false;
             }
-        } 
+        }
         // 2. Normal Camera logic
         else {
             this.cameraZoom += (this.targetZoom - this.cameraZoom) * 0.1;
@@ -245,38 +260,38 @@ export class Renderer {
         this.worldRenderer.drawObstacles();
         this.worldRenderer.drawWalls();
         this.worldRenderer.drawFloor();
-        
-        this.playerRenderer.drawThreads(players); // Threads behind players? Or front?
+
+        this.playerRenderer.drawThreads(players);
         this.playerRenderer.drawWebs(players);
-        
-        // Appliquer le filter d'inversion uniquement aux joueurs pendant le hit stop
-        // IMPORTANT: Toujours restaurer le filter après utilisation pour éviter les bugs sur tablette
+
         if (useInvertFilter) {
             this.ctx.save();
             this.ctx.filter = 'invert(1) contrast(2)';
             this.playerRenderer.drawPlayers(renderPlayers, this.network.getState());
             this.ctx.restore();
-            // Double sécurité : forcer le filter à 'none' après restore
             this.ctx.filter = 'none';
         } else {
-            // S'assurer que le filter est toujours 'none' même quand on ne l'utilise pas
             this.ctx.filter = 'none';
             this.playerRenderer.drawPlayers(renderPlayers, this.network.getState());
         }
-        
-        // Garantir que le filter est réinitialisé après le dessin des joueurs
+
         this.ctx.filter = 'none';
-        
-        this.drawGrenades(grenades); // Keep simple logic here or move to EffectRenderer? Keep simple for now.
-        
+
+        this.drawGrenades(grenades);
+
         this.effectRenderer.drawExplosions(explosions);
         this.effectRenderer.drawParticles();
-        this.drawScoreCircles(players, scores); // HUD should technically be screen space, but currently world space
+        this.drawScoreCircles(players, scores);
         this.effectRenderer.drawFloatingMessages();
-        
+
         this.comboSystem.update();
         this.effectRenderer.drawCombos(renderPlayers);
-        
+
+        // --- FATALITY DELEGATION ---
+        if (this.fatalityRenderer.active) {
+            this.fatalityRenderer.draw(this.ctx, this.cameraFocus);
+        }
+
         // Announcement Overlay
         if (this.announcement) {
             const elapsed = Date.now() - this.announcement.startTime;
@@ -287,7 +302,7 @@ export class Renderer {
                 this.announcement = null;
             }
         }
-        
+
         // CRITIQUE: Toujours réinitialiser le filter à la fin de chaque frame
         // Certaines tablettes Android peuvent avoir des bugs où le filter persiste
         this.ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -301,7 +316,7 @@ export class Renderer {
         for (const g of grenades) {
             ctx.save();
             ctx.translate(g.x, g.y);
-            
+
             // Bomb Body (Black Cartoon Style)
             ctx.shadowBlur = 0;
             ctx.fillStyle = '#111';
@@ -319,12 +334,12 @@ export class Renderer {
             ctx.moveTo(0, -GAME_CONFIG.GRENADE_RADIUS);
             ctx.quadraticCurveTo(5, -GAME_CONFIG.GRENADE_RADIUS - 10, 10, -GAME_CONFIG.GRENADE_RADIUS - 5);
             ctx.stroke();
-            
+
             // Spark
             if (Math.random() > 0.5) {
                 ctx.fillStyle = '#ffaa00';
                 ctx.beginPath();
-                ctx.arc(10, -GAME_CONFIG.GRENADE_RADIUS - 5, 3, 0, Math.PI*2);
+                ctx.arc(10, -GAME_CONFIG.GRENADE_RADIUS - 5, 3, 0, Math.PI * 2);
                 ctx.fill();
             }
 
@@ -382,25 +397,25 @@ export class Renderer {
 
         // Cercle extérieur (Couleur Joueur)
         ctx.beginPath(); ctx.arc(x, y, radius, 0, Math.PI * 2);
-        ctx.strokeStyle = color; ctx.lineWidth = 5; 
-        ctx.shadowBlur = 20; ctx.shadowColor = color; 
+        ctx.strokeStyle = color; ctx.lineWidth = 5;
+        ctx.shadowBlur = 20; ctx.shadowColor = color;
         ctx.stroke();
-        
+
         // Contour noir par dessus le néon pour netteté
         ctx.shadowBlur = 0;
         ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 1; ctx.stroke();
-        
+
         // Score Text
-        ctx.font = "bold 80px Orbitron"; 
-        ctx.fillStyle = color; 
-        ctx.shadowBlur = 0; 
+        ctx.font = "bold 80px Orbitron";
+        ctx.fillStyle = color;
+        ctx.shadowBlur = 0;
         ctx.lineWidth = 3; ctx.strokeStyle = '#000'; ctx.strokeText(score, x, y);
         ctx.fillText(score, x, y);
 
         // Name Text
-        ctx.font = "bold 30px Orbitron"; 
-        ctx.fillStyle = "#ffffff"; 
-        ctx.shadowBlur = 0; 
+        ctx.font = "bold 30px Orbitron";
+        ctx.fillStyle = "#ffffff";
+        ctx.shadowBlur = 0;
         ctx.lineWidth = 3; ctx.strokeStyle = '#000'; ctx.strokeText(name || "Player", x, y - 110);
         ctx.fillText(name || "Player", x, y - 110);
 
@@ -408,18 +423,18 @@ export class Renderer {
         for (let i = 0; i < 3; i++) {
             const gx = x - 30 + i * 30;
             const gy = y + 100;
-            
+
             // Grenade Slot Background
             ctx.beginPath(); ctx.arc(gx, gy, 12, 0, Math.PI * 2);
-            ctx.fillStyle = '#222'; ctx.fill(); ctx.strokeStyle='#000'; ctx.lineWidth=2; ctx.stroke();
+            ctx.fillStyle = '#222'; ctx.fill(); ctx.strokeStyle = '#000'; ctx.lineWidth = 2; ctx.stroke();
 
             if (i < grenadeCount) {
                 // Active Grenade Icon
                 ctx.beginPath(); ctx.arc(gx, gy, 8, 0, Math.PI * 2);
                 ctx.fillStyle = '#ffaa00'; ctx.fill();
-                ctx.shadowBlur = 10; ctx.shadowColor = '#ffaa00'; 
+                ctx.shadowBlur = 10; ctx.shadowColor = '#ffaa00';
                 // Sparkle
-                ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(gx-3, gy-3, 2, 0, Math.PI*2); ctx.fill();
+                ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(gx - 3, gy - 3, 2, 0, Math.PI * 2); ctx.fill();
             }
         }
     }

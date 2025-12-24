@@ -145,8 +145,8 @@ io.on('connection', (socket) => {
                 const result = player.applyInput(key);
                 if (result && result.type === 'attack') {
                     // Emit swing event for visual animation (even on miss)
-                    io.to(roomId).emit('event', { 
-                        type: 'swing', 
+                    io.to(roomId).emit('event', {
+                        type: 'swing',
                         player: player.isPlayer1 ? 'p1' : 'p2',
                         direction: result.direction
                     });
@@ -160,6 +160,22 @@ io.on('connection', (socket) => {
                     // Create grenade
                     const grenade = new Grenade(result.x, result.y, result.vx, result.vy, player.id);
                     rooms[roomId].grenades.push(grenade);
+                }
+            }
+        }
+    });
+
+    socket.on('fatality_select', (weapon) => {
+        const roomId = socketToRoom[socket.id];
+        if (roomId && rooms[roomId]) {
+            const room = rooms[roomId];
+            // Security: Only allow if fatality state is active and sender is winner
+            if (room.fatalityState && room.fatalityState.active && room.fatalityState.waitingForSelection) {
+                // Find if socket is the winner
+                const playerKey = room.fatalityState.winner;
+                const player = room.players[playerKey];
+                if (player && player.id === socket.id) {
+                    room.triggerFatalityAction(weapon);
                 }
             }
         }

@@ -10,14 +10,14 @@ export class SettingsManager {
         this.hintsEl = document.getElementById('controls-hint');
 
         this.currentControls = JSON.parse(JSON.stringify(CONTROLS));
-        
+
         // Load from storage
         const saved = localStorage.getItem('player_controls');
         if (saved) {
             try {
                 const parsed = JSON.parse(saved);
                 this.currentControls = { ...this.currentControls, ...parsed };
-            } catch(e) { console.error('Error loading controls', e); }
+            } catch (e) { console.error('Error loading controls', e); }
         }
 
         this.init();
@@ -30,7 +30,7 @@ export class SettingsManager {
         this.openBtn.addEventListener('click', () => this.open());
         this.saveBtn.addEventListener('click', () => this.save());
         this.resetBtn.addEventListener('click', () => this.reset());
-        
+
         this.modal.addEventListener('click', (e) => {
             if (e.target === this.modal) this.close();
         });
@@ -53,30 +53,30 @@ export class SettingsManager {
     }
 
     reset() {
-        this.currentControls = JSON.parse(JSON.stringify(CONTROLS)); 
+        this.currentControls = JSON.parse(JSON.stringify(CONTROLS));
         this.renderList();
     }
 
     renderList() {
         this.listEl.innerHTML = '';
-        
+
         for (const [action, keys] of Object.entries(this.currentControls)) {
             const row = document.createElement('div');
             row.className = 'key-row';
-            
+
             const label = document.createElement('span');
             label.className = 'key-action';
             label.innerText = action;
-            
+
             const bindBtn = document.createElement('div');
             bindBtn.className = 'key-binding';
             // Show first key
             let displayKey = keys[0].replace('Key', '').replace('Digit', '');
             if (displayKey === ' ') displayKey = 'SPACE';
             bindBtn.innerText = displayKey;
-            
+
             bindBtn.addEventListener('click', () => this.startBinding(action, bindBtn));
-            
+
             row.appendChild(label);
             row.appendChild(bindBtn);
             this.listEl.appendChild(row);
@@ -86,23 +86,23 @@ export class SettingsManager {
     startBinding(action, btnElement) {
         btnElement.innerText = 'PRESS...';
         btnElement.classList.add('listening');
-        
+
         const handler = (e) => {
             e.preventDefault();
             const code = e.code;
-            
+
             this.currentControls[action] = [code];
-            
+
             document.removeEventListener('keydown', handler);
             this.renderList();
         };
-        
+
         document.addEventListener('keydown', handler, { once: true });
     }
 
     updateHints() {
         if (!this.hintsEl) return;
-        
+
         const fk = (action) => {
             const keys = this.currentControls[action];
             if (!keys || keys.length === 0) return '?';
@@ -118,7 +118,7 @@ export class SettingsManager {
             <div class="key"><span>${fk('THREAD')}</span> WIRE</div>
             <div class="key"><span>${fk('WEB')}</span> WEB</div>
         `;
-        
+
         this.hintsEl.innerHTML = hintHTML;
     }
 }

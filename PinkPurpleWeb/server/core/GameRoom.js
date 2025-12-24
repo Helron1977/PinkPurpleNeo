@@ -21,7 +21,7 @@ class GameRoom {
     generateObstacles() {
         this.obstacles = [];
         const centerX = WIDTH / 2;
-        
+
         // Génération symétrique : 7 obstacles de chaque côté
         const leftObstacles = [];
         for (let i = 0; i < 7; i++) {
@@ -31,13 +31,13 @@ class GameRoom {
             const h = 100 + Math.random() * 200;
             leftObstacles.push({ x, y, w, h });
         }
-        
+
         // Filtrer pour éviter les zones de spawn
         const filteredLeft = leftObstacles.filter(o => {
             const p1Safe = (o.x + o.w < 50 || o.x > 250 || o.y + o.h < 150 || o.y > 350);
             return p1Safe;
         });
-        
+
         // Créer les obstacles symétriques à droite
         for (const obs of filteredLeft) {
             // Ajouter l'obstacle gauche
@@ -51,7 +51,7 @@ class GameRoom {
                 h: obs.h
             });
         }
-        
+
         // Filtrer pour éviter les zones de spawn P2
         this.obstacles = this.obstacles.filter(o => {
             const p2Safe = (o.x + o.w < 1750 || o.x > 1950 || o.y + o.h < 150 || o.y > 350);
@@ -121,8 +121,19 @@ class GameRoom {
             }
 
             // Emit bounce events
+            // Emit bounce events
             if (p1Status.bounced) this.io.to(this.id).emit('event', { type: 'bounce', player: 'p1' });
             if (p2Status.bounced) this.io.to(this.id).emit('event', { type: 'bounce', player: 'p2' });
+
+            // Emit Slam Impact
+            if (p1Status.slammed) {
+                this.io.to(this.id).emit('event', { type: 'slam_impact', player: 'p1', x: p1.x, y: p1.y });
+                this.globalHitStop = 10;
+            }
+            if (p2Status.slammed) {
+                this.io.to(this.id).emit('event', { type: 'slam_impact', player: 'p2', x: p2.x, y: p2.y });
+                this.globalHitStop = 10;
+            }
 
             // Distance Squared (évite Math.sqrt)
             const dx = p2.x - p1.x;
@@ -155,8 +166,8 @@ class GameRoom {
         }
 
         this.updateGrenades(p1, p2);
-        if (!this.isGameOver) {
-            this.checkWinCondition();
+        if (!this.isGameOver && !this.fatalityState) {
+            this.checkFatalityCondition();
         }
     }
 
@@ -166,7 +177,7 @@ class GameRoom {
         if (!this.isGameOver) {
             this.scores[killer.isPlayer1 ? 'p1' : 'p2']++;
         }
-        
+
         victim.reset();
         killer.webAvailable = true;
         killer.webActive = null;
@@ -178,48 +189,62 @@ class GameRoom {
 
     // Helper: Geometric Hit Check
     checkHit(attacker, victim, dist, angleAttackToVictim) {
-        if (dist > 140) return false;
-        
-        // CORPS A CORPS : Si très proche, le coup touche presque tout le temps (180° devant)
-        if (dist < 60) {
-            // Pas de check d'angle strict, juste être vaguement "devant" (ou même 360 pour éviter frustration)
-            // Soyons généreux : Auto-hit si collé
-            return true;
-        }
+        // Distance absolute check
+        if (dist > 150) return false;
+        if (dist < 60) return true; // Close quarter auto-hit
 
-        const facingAngle = attacker.lastFacing === 1 ? 0 : Math.PI;
-        let diff = angleAttackToVictim - facingAngle;
+        // Calculate relative angle in local space of attacker
+        // 0 is where they are facing/attacking
+        let attackAngle = 0;
+        if (attacker.currentAttackDirection === 'up') attackAngle = -Math.PI / 2;
+        else if (attacker.currentAttackDirection === 'down') attackAngle = Math.PI / 2;
+        else attackAngle = attacker.lastFacing === 1 ? 0 : Math.PI;
+
+        let diff = angleAttackToVictim - attackAngle;
         while (diff > Math.PI) diff -= Math.PI * 2;
         while (diff < -Math.PI) diff += Math.PI * 2;
-        
-        // Tolérance angulaire (Cone)
-        return Math.abs(diff) < 1.2;
+
+        // Hit Cone Widths
+        let cone = 1.0; // Default side cone (~60 deg)
+        if (attacker.currentAttackDirection === 'up') cone = 1.2; // Wider overhead
+        if (attacker.currentAttackDirection === 'down') cone = 0.8; // Narrower spike
+
+        return Math.abs(diff) < cone;
     }
 
     // Helper: Resolve Hit Logic
     resolveHit(attacker, victim, dx, dy) {
-        let batAngle;
+        let knockbackAngle;
+
+        // 1. Determine Primary Force Vector based on Intent
         if (attacker.currentAttackDirection === 'up') {
-            batAngle = -Math.PI / 2;
-            const horizontalOffset = Math.atan2(dx, Math.abs(dy)) * 0.3;
-            batAngle += horizontalOffset;
-        } else {
-            batAngle = attacker.lastFacing === 1 ? 0 : Math.PI;
-            const verticalOffset = Math.atan2(dy, Math.abs(dx));
-            batAngle += Math.max(-Math.PI / 3, Math.min(Math.PI / 3, verticalOffset * 0.5));
+            // UPPERCUT: Always sends UP, regardless of relative X
+            knockbackAngle = -Math.PI / 2;
+            // Add slight spread based on relative X position
+            knockbackAngle += (Math.random() - 0.5) * 0.2;
         }
-        
+        else if (attacker.currentAttackDirection === 'down') {
+            // SPIKE: Sends DOWN
+            knockbackAngle = Math.PI / 2;
+        }
+        else {
+            // NEUTRAL / SIDE: Pure Physics (Pool Ball Effect)
+            // Use the vector separating the two centers
+            knockbackAngle = Math.atan2(dy, dx);
+        }
+
         let comboMultiplier = 1.0;
         if (attacker.attackCombo >= 2) comboMultiplier = 2.0;
         else if (attacker.dashAttackCombo) comboMultiplier = 1.8;
-        
-        victim.prepareEjection(batAngle, comboMultiplier);
+
+        victim.prepareEjection(knockbackAngle, comboMultiplier);
         attacker.enterVictoryStance();
         attacker.isHit = false;
         attacker.dashAttackCombo = false;
         victim.isHit = false;
         victim.activeHitboxTimer = 0;
-        this.globalHitStop = 30;
+        victim.activeHitboxTimer = 0;
+        this.globalHitStop = 12; // Was 30 - Synced with client 0.2s
 
         const hitEvent = { type: 'hit', from: attacker.isPlayer1 ? 'p1' : 'p2', to: victim.isPlayer1 ? 'p1' : 'p2', damage: victim.damage };
         this.io.to(this.id).emit('event', hitEvent);
@@ -234,14 +259,14 @@ class GameRoom {
             if (p1.threadActive) {
                 const tdx = p2.x - p1.threadActive.x;
                 const tdy = p2.y - p1.threadActive.y;
-                if (tdx*tdx + tdy*tdy < 900) {
+                if (tdx * tdx + tdy * tdy < 900) {
                     this.applyThreadHit(p1, p2, 'p1', 'p2');
                 }
             }
             if (p2.threadActive) {
                 const tdx = p1.x - p2.threadActive.x;
                 const tdy = p1.y - p2.threadActive.y;
-                if (tdx*tdx + tdy*tdy < 900) {
+                if (tdx * tdx + tdy * tdy < 900) {
                     this.applyThreadHit(p2, p1, 'p2', 'p1');
                 }
             }
@@ -252,7 +277,7 @@ class GameRoom {
             const wdx = p2.x - p1.webActive.x;
             const wdy = p2.y - p1.webActive.y;
             const radius = p1.webActive.radius + 25;
-            if (wdx*wdx + wdy*wdy < radius*radius) {
+            if (wdx * wdx + wdy * wdy < radius * radius) {
                 p2.moveCooldown = Math.max(p2.moveCooldown, 180);
                 this.io.to(this.id).emit('event', { type: 'web_hit', from: 'p1', to: 'p2', x: p2.x, y: p2.y });
             }
@@ -261,7 +286,7 @@ class GameRoom {
             const wdx = p1.x - p2.webActive.x;
             const wdy = p1.y - p2.webActive.y;
             const radius = p2.webActive.radius + 25;
-            if (wdx*wdx + wdy*wdy < radius*radius) {
+            if (wdx * wdx + wdy * wdy < radius * radius) {
                 p1.moveCooldown = Math.max(p1.moveCooldown, 180);
                 this.io.to(this.id).emit('event', { type: 'web_hit', from: 'p2', to: 'p1', x: p1.x, y: p1.y });
             }
@@ -274,8 +299,8 @@ class GameRoom {
         attacker.sizeMultiplier = 1.15;
         attacker.sizeEffectTimer = 300;
         attacker.threadActive = null;
-        this.io.to(this.id).emit('event', { 
-            type: 'thread_hit', from: fromId, to: toId, fromSize: 1.15, toSize: 0.85, x: victim.x, y: victim.y 
+        this.io.to(this.id).emit('event', {
+            type: 'thread_hit', from: fromId, to: toId, fromSize: 1.15, toSize: 0.85, x: victim.x, y: victim.y
         });
     }
 
@@ -302,7 +327,7 @@ class GameRoom {
                     if (p && grenade.owner !== p.id) {
                         const dx = p.x - grenade.x;
                         const dy = p.y - grenade.y;
-                        if (dx*dx + dy*dy < 1600) { // 40*40
+                        if (dx * dx + dy * dy < 1600) { // 40*40
                             grenade.attachedTo = pid;
                         }
                     }
@@ -319,9 +344,9 @@ class GameRoom {
                     if (!player) return;
                     const dx = player.x - grenade.x;
                     const dy = player.y - grenade.y;
-                    if (dx*dx + dy*dy < BLAST_SQ) {
+                    if (dx * dx + dy * dy < BLAST_SQ) {
                         player.prepareEjection(Math.atan2(dy, dx));
-                        this.globalHitStop = 30;
+                        this.globalHitStop = 15; // Was 30
                         const evt = { type: 'grenade_hit', target: pid, damage: player.damage };
                         this.io.to(this.id).emit('event', evt);
                         this.botCallbacks.onEvent(this.id, evt);
@@ -344,18 +369,65 @@ class GameRoom {
         }
     }
 
-    checkWinCondition() {
+    checkFatalityCondition() {
         if (this.scores.p1 >= 10 || this.scores.p2 >= 10) {
             const winner = this.scores.p1 >= 10 ? 'p1' : 'p2';
-            this.isGameOver = true;
-            this.gameOverTimer = 180; // 3 seconds transition
-
-            this.io.to(this.id).emit('game_over', { winner: winner });
-            this.botCallbacks.onGameEnd(this.id, winner);
-            
-            // Trigger victory dance event
-            this.io.to(this.id).emit('event', { type: 'victory_dance', player: winner });
+            this.triggerFatality(winner);
         }
+    }
+
+    triggerFatality(winnerId) {
+        if (this.fatalityState) return; // Already triggered
+
+        this.fatalityState = {
+            active: true,
+            winner: winnerId,
+            waitingForSelection: true
+        };
+
+        // Notify Client to start Cinematic & Selection
+        this.io.to(this.id).emit('event', {
+            type: 'fatality_start',
+            winner: winnerId,
+            victim: winnerId === 'p1' ? 'p2' : 'p1'
+        });
+
+        // Fallback: If no selection in 15 seconds, end game
+        this.fatalityTimeout = setTimeout(() => {
+            if (this.fatalityState) {
+                this.handleFatalityEnd(winnerId);
+            }
+        }, 15000);
+    }
+
+    triggerFatalityAction(weapon) {
+        if (!this.fatalityState || !this.fatalityState.waitingForSelection) return;
+
+        if (this.fatalityTimeout) clearTimeout(this.fatalityTimeout);
+        this.fatalityState.waitingForSelection = false;
+
+        const winnerId = this.fatalityState.winner;
+
+        // Notify Client to play the Animation
+        this.io.to(this.id).emit('event', {
+            type: 'fatality_action',
+            weapon: weapon,
+            winner: winnerId,
+            victim: winnerId === 'p1' ? 'p2' : 'p1'
+        });
+
+        // End Game after Animation (e.g. 6 seconds)
+        setTimeout(() => {
+            this.handleFatalityEnd(winnerId);
+        }, 6000);
+    }
+
+    handleFatalityEnd(winnerId) {
+        this.isGameOver = true;
+        this.gameOverTimer = 60;
+        this.io.to(this.id).emit('game_over', { winner: winnerId });
+        this.botCallbacks.onGameEnd(this.id, winnerId);
+        this.fatalityState = null;
     }
 
     resetGame() {
@@ -382,7 +454,7 @@ class GameRoom {
         // + New: 1 (AbilityFlags)
         // + Thread: 4 bytes (X, Y) if active
         // + Web: 5 bytes (X, Y, Radius) if active
-        
+
         let p1Size = 7;
         if (this.players['p1'] && this.players['p1'].threadActive) p1Size += 4;
         if (this.players['p1'] && this.players['p1'].webActive) p1Size += 5;
@@ -413,7 +485,7 @@ class GameRoom {
                 // Let's keep the active flag = 0 but write generic empty data to maintain simpler parsing if possible,
                 // OR better: Client reads flag, if 0, skips fixed amount.
                 // For dynamic parts (thread/web), if player inactive, they don't exist.
-                
+
                 // Let's rewrite:
                 // Flags (1)
                 // If Flags & 1 (Active):
@@ -422,7 +494,7 @@ class GameRoom {
                 //   Read AbilityFlags (1)
                 //   If AbilityFlags & 1 (Thread): Read ThreadPos (4)
                 //   If AbilityFlags & 2 (Web): Read WebPosRadius (5)
-                
+
                 offset++; // Advance past the 0 flag
                 return;
             }
@@ -441,19 +513,19 @@ class GameRoom {
             // Coordinates x10
             buf.writeInt16LE(Math.round(p.x * 10), offset); offset += 2;
             buf.writeInt16LE(Math.round(p.y * 10), offset); offset += 2;
-            
+
             // Ability Flags
             let abilityFlags = 0;
             if (p.threadActive) abilityFlags |= 1;
             if (p.webActive) abilityFlags |= 2;
             buf.writeUInt8(abilityFlags, offset++);
-            
+
             // Thread Data
             if (p.threadActive) {
                 buf.writeInt16LE(Math.round(p.threadActive.x * 10), offset); offset += 2;
                 buf.writeInt16LE(Math.round(p.threadActive.y * 10), offset); offset += 2;
             }
-            
+
             // Web Data
             if (p.webActive) {
                 buf.writeInt16LE(Math.round(p.webActive.x * 10), offset); offset += 2;

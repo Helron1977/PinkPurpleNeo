@@ -1,8 +1,8 @@
 // Game Constants
 const WIDTH = 1920;
 const HEIGHT = 1080;
-const GRAVITY = 8;
-const T_INC = 0.2// 0.3 too fast - 0.016 too slow
+const GRAVITY = 20; // Reduced from 25
+const T_INC = 0.18; // Reduced from 0.25 to slow down gameplay (~1.4x slower)
 const R_MIN = 25;
 const R_MAX = 30;
 

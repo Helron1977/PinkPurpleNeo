@@ -19,8 +19,10 @@ body {
     align-items: center;
     /* Utiliser env() pour gérer les barres de navigation Android */
     height: 100vh;
-    height: 100dvh; /* Dynamic viewport height pour mobile */
-    min-height: -webkit-fill-available; /* iOS Safari */
+    height: 100dvh;
+    /* Dynamic viewport height pour mobile */
+    min-height: -webkit-fill-available;
+    /* iOS Safari */
     touch-action: none;
     /* Masquer les barres de navigation Android */
     padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
@@ -461,7 +463,8 @@ input[type="text"]:focus {
 }
 
 /* --- MODALS (Tutorial / Settings / Victory) --- */
-.modal {
+.modal,
+.modal-overlay {
     position: fixed;
     top: 0;
     left: 0;
@@ -470,7 +473,8 @@ input[type="text"]:focus {
     background: rgba(0, 0, 0, 0.85);
     backdrop-filter: blur(5px);
     z-index: 2000;
-    display: none; /* Hidden by default */
+    display: none;
+    /* Hidden by default */
     justify-content: center;
     align-items: center;
     pointer-events: auto;
@@ -478,7 +482,8 @@ input[type="text"]:focus {
 
 .modal-content {
     background: var(--bg-panel);
-    border: 3px solid #000; /* Cel Shading Style */
+    border: 3px solid #000;
+    /* Cel Shading Style */
     border-radius: 15px;
     padding: 30px;
     width: 90%;
@@ -560,7 +565,8 @@ input[type="text"]:focus {
     font-weight: bold;
 }
 
-.key-binding:hover, .key-binding.listening {
+.key-binding:hover,
+.key-binding.listening {
     border-color: var(--secondary-color);
     color: var(--secondary-color);
     box-shadow: 0 0 10px rgba(188, 19, 254, 0.5);

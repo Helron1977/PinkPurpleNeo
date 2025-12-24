@@ -83,7 +83,7 @@ export class PlayerRenderer {
         ctx.translate(p.x, p.y);
 
         const anim = this.playerAnims[id];
-        
+
         // Size Effect
         let sizeMultiplier = 1.0;
         if (this.playerSizeEffects[id]) {
@@ -92,13 +92,13 @@ export class PlayerRenderer {
             sizeMultiplier = p.sizeMultiplier;
         }
         ctx.scale(sizeMultiplier, sizeMultiplier);
-        
+
         // Respawn Blink
         if (p.isRespawning) {
             const blinkRate = Math.floor(this.frameCounter / 5) % 2;
             if (blinkRate === 0) ctx.globalAlpha = 0.5;
         }
-        
+
         const isStunned = (anim && anim.type === 'stunned');
 
         // --- 1. SQUASH & STRETCH ---
@@ -180,7 +180,7 @@ export class PlayerRenderer {
         ctx.beginPath();
         ctx.arc(0, 0, r, 0, Math.PI * 2);
         ctx.clip(); // Restreindre à la sphère
-        
+
         ctx.translate(-r * 0.3, r * 0.3); // Décalage de l'ombre (bas-gauche)
         ctx.fillStyle = 'rgba(0, 0, 0, 0.4)'; // Ombre noire semi-transparente
         ctx.beginPath();
@@ -219,7 +219,7 @@ export class PlayerRenderer {
 
     drawFace(ctx, p, id, networkState, anim, isStunned) {
         const facing = p.facing || 1;
-        
+
         // Find opponent for eye tracking
         const opponentId = id === 'p1' ? 'p2' : 'p1';
         const opponent = networkState.players && networkState.players[opponentId];
@@ -228,9 +228,9 @@ export class PlayerRenderer {
         // Si facing = 1 (droite), oeil droit visible, oeil gauche caché
         // Si facing = -1 (gauche), oeil gauche visible, oeil droit caché
         // MAIS on veut voir l'oeil "avant" principalement
-        
+
         let lookX = 0, lookY = 0;
-        
+
         if (opponent) {
             const dx = opponent.x - p.x;
             const dy = opponent.y - p.y;
@@ -265,10 +265,10 @@ export class PlayerRenderer {
             ctx.shadowBlur = 5;
             ctx.beginPath(); ctx.moveTo(-18, -8); ctx.lineTo(-8, -2); ctx.moveTo(-18, -2); ctx.lineTo(-8, -8); ctx.stroke();
             ctx.beginPath(); ctx.moveTo(8, -8); ctx.lineTo(18, -2); ctx.moveTo(8, -2); ctx.lineTo(18, -8); ctx.stroke();
-            
+
             // Birds/Stars spinning above head
             const time = Date.now() / 200;
-            for(let i=0; i<3; i++) {
+            for (let i = 0; i < 3; i++) {
                 const angle = time + (i * (Math.PI * 2 / 3));
                 const rx = Math.cos(angle) * 30;
                 const ry = Math.sin(angle) * 10;
@@ -293,30 +293,30 @@ export class PlayerRenderer {
             // YEUX DE PROFIL
             // On dessine l'oeil "coté direction" plus grand et plus centré
             // L'autre oeil est soit caché soit sur le bord
-            
+
             ctx.fillStyle = '#fff';
             ctx.shadowBlur = 10;
             ctx.shadowColor = '#fff'; // Glow blanc pour les yeux (pas de contour noir moche)
-            
+
             if (facing === 1) { // Regarde à Droite
                 // Oeil Droit (Visible)
                 const rightEyeX = 15 + lookX * 0.3; // Décalé vers la droite
                 const eyeY = -5 + lookY * 0.3;
-                
+
                 // Forme amande/ovale
-                ctx.beginPath(); 
-                ctx.ellipse(rightEyeX, eyeY, 8, 8 * eyeScaleY, 0, 0, Math.PI * 2); 
+                ctx.beginPath();
+                ctx.ellipse(rightEyeX, eyeY, 8, 8 * eyeScaleY, 0, 0, Math.PI * 2);
                 ctx.fill();
-                
+
                 // Oeil Gauche (Caché ou petit sur le bord gauche du nez)
                 // On ne le dessine pas en vrai profil strict
             } else { // Regarde à Gauche
                 // Oeil Gauche (Visible)
                 const leftEyeX = -15 + lookX * 0.3; // Décalé vers la gauche
                 const eyeY = -5 + lookY * 0.3;
-                
-                ctx.beginPath(); 
-                ctx.ellipse(leftEyeX, eyeY, 8, 8 * eyeScaleY, 0, 0, Math.PI * 2); 
+
+                ctx.beginPath();
+                ctx.ellipse(leftEyeX, eyeY, 8, 8 * eyeScaleY, 0, 0, Math.PI * 2);
                 ctx.fill();
             }
         }
@@ -335,9 +335,9 @@ export class PlayerRenderer {
 
         if (facing === 1) { // Regarde Droite
             h1x3D = 25;  // Main Avant (Droite)
-            h1y3D = 10 + flY; 
+            h1y3D = 10 + flY;
             h1z3D = 10;  // Devant
-            
+
             h2x3D = -20; // Main Arrière (Gauche)
             h2y3D = 15 + flY; // Un peu plus basse pour perspective
             h2z3D = -10; // Derrière
@@ -345,7 +345,7 @@ export class PlayerRenderer {
             h1x3D = -25; // Main Avant (Gauche)
             h1y3D = 10 + flY;
             h1z3D = 10; // Devant
-            
+
             h2x3D = 20; // Main Arrière (Droite)
             h2y3D = 15 + flY; // Un peu plus basse
             h2z3D = -10; // Derrière
@@ -358,67 +358,67 @@ export class PlayerRenderer {
         const isVictory = p.victoryStance || (anim && anim.type === 'victory');
 
         if (isVictory) {
-             const t = Date.now() / 200;
-             // Arms up in V
-             h1x3D = 35 * Math.cos(t);
-             h1y3D = -30;
-             h1z3D = 35 * Math.sin(t);
-             
-             h2x3D = -35 * Math.cos(t);
-             h2y3D = -30;
-             h2z3D = -35 * Math.sin(t);
-             
-             batRotation = -Math.PI / 2;
-             // Spin effect handled by rotating camera or projecting points with rotation
-             // Here simplified: simple orbital movement
+            const t = Date.now() / 200;
+            // Arms up in V
+            h1x3D = 35 * Math.cos(t);
+            h1y3D = -30;
+            h1z3D = 35 * Math.sin(t);
+
+            h2x3D = -35 * Math.cos(t);
+            h2y3D = -30;
+            h2z3D = -35 * Math.sin(t);
+
+            batRotation = -Math.PI / 2;
+            // Spin effect handled by rotating camera or projecting points with rotation
+            // Here simplified: simple orbital movement
         }
         else if (anim && anim.type === 'bat_swing') {
             const elapsed = Date.now() - anim.startTime;
             if (elapsed < anim.duration) {
                 const progress = elapsed / anim.duration;
                 const direction = anim.direction || (facing === 1 ? 'right' : 'left');
-                
+
                 // --- UP ATTACK (Demi-cercle uppercut) ---
                 if (direction === 'up') {
                     // Uppercut: starts low, ends high
                     // Arc de cercle vertical devant le corps
-                    
+
                     const t = progress; // 0 to 1
-                    
+
                     // Arc trajectory: Bas -> Devant -> Haut
                     // Pour facing=1 (droite): Bas (3*PI/2) -> Devant (0) -> Haut (-PI/2)
                     // Pour facing=-1 (gauche): Bas (3*PI/2) -> Devant (PI) -> Haut (-PI/2)
                     const startAngle = 3 * Math.PI / 2; // Bas (270 deg)
                     const endAngle = -Math.PI / 2; // Haut (-90 deg)
-                    
+
                     // Ease out pour un mouvement fluide
                     const ease = 1 - Math.pow(1 - t, 3);
                     const currentAngle = startAngle + (endAngle - startAngle) * ease;
-                    
+
                     const pivotX = 20 * facing;
                     const pivotY = 0;
                     const radius = 50;
-                    
+
                     h1x3D = pivotX + Math.cos(currentAngle) * radius * facing;
                     h1y3D = pivotY + Math.sin(currentAngle) * radius;
                     h1z3D = 20 * Math.sin(t * Math.PI); // Comes forward a bit
-                    
-                    batRotation = (currentAngle - Math.PI/2) * facing;
+
+                    batRotation = (currentAngle - Math.PI / 2) * facing;
                     bodyRotationZ = -0.1 * facing + (0.2 * t * facing); // Slight tilt
 
                     // Smear: doit suivre l'arc de bas en haut
                     if (progress > 0.1 && progress < 0.6) {
                         ctx.save();
                         ctx.translate(pivotX, pivotY);
-                        
+
                         // Arc de 3*PI/2 (Bas) à -PI/2 (Haut)
                         // Pour facing=1: passe par 0 (Devant Droite) => CW (false)
                         // Pour facing=-1: passe par PI (Devant Gauche) => CCW (true)
-                        
+
                         let sAngle = startAngle; // 3*PI/2
                         let eAngle = currentAngle; // Va de 3*PI/2 à -PI/2
                         let ccw = false; // CW pour facing 1 (passe par 0)
-                        
+
                         if (facing === -1) {
                             // Pour facing -1, on veut que l'arc passe par PI (devant gauche)
                             // On peut ajuster les angles ou simplement inverser le sens
@@ -432,69 +432,69 @@ export class PlayerRenderer {
                         ctx.restore();
                     }
 
-                // --- RIGHT ATTACK (Arc vers la droite) ---
+                    // --- RIGHT ATTACK (Arc vers la droite) ---
                 } else if (direction === 'right') {
-                     const swingDir = 1; // Toujours vers la droite visuelle
-                     
-                     const startAngle = -Math.PI / 1.5; // Arrière haut
-                     const endAngle = Math.PI / 3;      // Avant bas
-                     
-                     // EaseOutCubic
-                     const ease = 1 - Math.pow(1 - progress, 3);
-                     const currentAngle = startAngle + (endAngle - startAngle) * ease;
-                     
-                     const pivotX = 10;
-                     const pivotY = 0;
-                     const radius = 60;
-                     
-                     h1x3D = pivotX + Math.cos(currentAngle) * radius; 
-                     h1y3D = pivotY + Math.sin(currentAngle) * radius;
-                     h1z3D = 10;
-                     
-                     // Correction pour faire "face" à droite
-                     if (facing === -1) h1z3D = -10;
-                     
-                     batRotation = currentAngle + Math.PI / 2;
-                     
-                     if (progress < 0.5) {
-                         ctx.save();
-                         ctx.translate(pivotX, pivotY);
-                         this.drawSmear(ctx, radius, startAngle, currentAngle, false);
-                         ctx.restore();
-                     }
+                    const swingDir = 1; // Toujours vers la droite visuelle
 
-                // --- LEFT ATTACK (Arc vers la gauche) ---
+                    const startAngle = -Math.PI / 1.5; // Arrière haut
+                    const endAngle = Math.PI / 3;      // Avant bas
+
+                    // EaseOutCubic
+                    const ease = 1 - Math.pow(1 - progress, 3);
+                    const currentAngle = startAngle + (endAngle - startAngle) * ease;
+
+                    const pivotX = 10;
+                    const pivotY = 0;
+                    const radius = 60;
+
+                    h1x3D = pivotX + Math.cos(currentAngle) * radius;
+                    h1y3D = pivotY + Math.sin(currentAngle) * radius;
+                    h1z3D = 10;
+
+                    // Correction pour faire "face" à droite
+                    if (facing === -1) h1z3D = -10;
+
+                    batRotation = currentAngle + Math.PI / 2;
+
+                    if (progress < 0.5) {
+                        ctx.save();
+                        ctx.translate(pivotX, pivotY);
+                        this.drawSmear(ctx, radius, startAngle, currentAngle, false);
+                        ctx.restore();
+                    }
+
+                    // --- LEFT ATTACK (Arc vers la gauche) ---
                 } else { // direction === 'left'
-                     // Symétrique à Right
-                     const baseStartAngle = -Math.PI / 1.5;
-                     const baseEndAngle = Math.PI / 3;
-                     const ease = 1 - Math.pow(1 - progress, 3);
-                     const currentBaseAngle = baseStartAngle + (baseEndAngle - baseStartAngle) * ease;
-                     
-                     const pivotX = -10;
-                     const pivotY = 0;
-                     const radius = 60;
-                     
-                     h1x3D = pivotX - (Math.cos(currentBaseAngle) * radius); // Inverse X
-                     h1y3D = pivotY + Math.sin(currentBaseAngle) * radius;
-                     h1z3D = 10;
-                     if (facing === 1) h1z3D = -10; // Bras gauche derrière si regarde droite
-                     
-                     // Rotation batte miroir
-                     batRotation = -(currentBaseAngle + Math.PI / 2);
-                     
-                     // Smear needs adjusted angles
-                     if (progress < 0.5) {
-                         ctx.save();
-                         ctx.translate(pivotX, pivotY);
-                         // Mirror angles: PI - angle
-                         const sAngle = Math.PI - baseStartAngle;
-                         const eAngle = Math.PI - currentBaseAngle;
-                         // 300 -> 120. Via 180. => CW (false)
-                         
-                         this.drawSmear(ctx, radius, sAngle, eAngle, false); // WAS TRUE -> NOW FALSE (CW)
-                         ctx.restore();
-                     }
+                    // Symétrique à Right
+                    const baseStartAngle = -Math.PI / 1.5;
+                    const baseEndAngle = Math.PI / 3;
+                    const ease = 1 - Math.pow(1 - progress, 3);
+                    const currentBaseAngle = baseStartAngle + (baseEndAngle - baseStartAngle) * ease;
+
+                    const pivotX = -10;
+                    const pivotY = 0;
+                    const radius = 60;
+
+                    h1x3D = pivotX - (Math.cos(currentBaseAngle) * radius); // Inverse X
+                    h1y3D = pivotY + Math.sin(currentBaseAngle) * radius;
+                    h1z3D = 10;
+                    if (facing === 1) h1z3D = -10; // Bras gauche derrière si regarde droite
+
+                    // Rotation batte miroir
+                    batRotation = -(currentBaseAngle + Math.PI / 2);
+
+                    // Smear needs adjusted angles
+                    if (progress < 0.5) {
+                        ctx.save();
+                        ctx.translate(pivotX, pivotY);
+                        // Mirror angles: PI - angle
+                        const sAngle = Math.PI - baseStartAngle;
+                        const eAngle = Math.PI - currentBaseAngle;
+                        // 300 -> 120. Via 180. => CW (false)
+
+                        this.drawSmear(ctx, radius, sAngle, eAngle, false); // WAS TRUE -> NOW FALSE (CW)
+                        ctx.restore();
+                    }
                 }
 
             } else {
@@ -509,7 +509,7 @@ export class PlayerRenderer {
 
         // Draw Order based on Z
         const hand1 = () => {
-             // Front Hand & Bat
+            // Front Hand & Bat
             ctx.save();
             ctx.translate(h1Proj.x, h1Proj.y);
             ctx.rotate(batRotation);
@@ -517,12 +517,12 @@ export class PlayerRenderer {
             // Batte Toon
             ctx.lineWidth = 2;
             ctx.strokeStyle = '#000';
-            
+
             // Handle
             ctx.fillStyle = '#ccc';
-            ctx.fillRect(-2, -5, 15, 6); 
+            ctx.fillRect(-2, -5, 15, 6);
             ctx.strokeRect(-2, -5, 15, 6);
-            
+
             // Bat Body
             ctx.beginPath();
             ctx.moveTo(10, -5); ctx.lineTo(80, -10);
@@ -530,7 +530,7 @@ export class PlayerRenderer {
             ctx.quadraticCurveTo(90, 5, 80, 10);
             ctx.lineTo(10, 5);
             ctx.closePath();
-            
+
             ctx.fillStyle = '#fff'; // White Bat
             ctx.fill();
             ctx.stroke();
@@ -546,7 +546,7 @@ export class PlayerRenderer {
         };
 
         const hand2 = () => {
-             // Back Hand (Free hand - Toon)
+            // Back Hand (Free hand - Toon)
             ctx.fillStyle = p.color;
             ctx.beginPath(); ctx.arc(h2Proj.x, h2Proj.y, 8, 0, Math.PI * 2); ctx.fill();
             ctx.lineWidth = 2;
@@ -566,7 +566,7 @@ export class PlayerRenderer {
         // Smear "Toon" (Solid + Outline)
         ctx.lineWidth = 40;
         ctx.lineCap = 'round';
-        
+
         // 1. Outline (Gros trait blanc transparent)
         ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
         ctx.beginPath();
@@ -581,10 +581,10 @@ export class PlayerRenderer {
         ctx.beginPath();
         ctx.arc(0, 0, radius, startAngle, endAngle, counterClockwise);
         ctx.stroke();
-        
+
         ctx.restore();
     }
-    
+
     drawThreads(players) {
         const ctx = this.ctx;
         for (const id in players) {
@@ -599,7 +599,7 @@ export class PlayerRenderer {
                 ctx.moveTo(p.x, p.y);
                 ctx.lineTo(p.threadActive.x, p.threadActive.y);
                 ctx.stroke();
-                
+
                 ctx.fillStyle = p.color;
                 ctx.beginPath();
                 ctx.arc(p.threadActive.x, p.threadActive.y, 5, 0, Math.PI * 2);
@@ -617,12 +617,12 @@ export class PlayerRenderer {
                 ctx.save();
                 const web = p.webActive;
                 const alpha = 0.6 - (web.age / 600) * 0.3;
-                
+
                 ctx.fillStyle = `rgba(200, 200, 200, ${alpha})`;
                 ctx.shadowBlur = 20;
                 ctx.shadowColor = p.color;
                 ctx.beginPath(); ctx.arc(web.x, web.y, web.radius, 0, Math.PI * 2); ctx.fill();
-                
+
                 ctx.strokeStyle = `rgba(255, 255, 255, ${alpha})`;
                 ctx.lineWidth = 2;
                 for (let i = 0; i < 8; i++) {
@@ -632,7 +632,7 @@ export class PlayerRenderer {
                     ctx.lineTo(web.x + Math.cos(angle) * web.radius, web.y + Math.sin(angle) * web.radius);
                     ctx.stroke();
                 }
-                
+
                 ctx.strokeStyle = `rgba(255, 255, 255, ${alpha * 0.7})`;
                 ctx.lineWidth = 1.5;
                 ctx.beginPath();

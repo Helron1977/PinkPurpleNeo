@@ -3,7 +3,8 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="viewport"
+        content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -12,20 +13,20 @@
     <link rel="manifest" href="manifest.json">
     <link rel="stylesheet" href="style.css">
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
-    <script src="https://unpkg.com/zdog@1/dist/zdog.dist.min.js"></script>
+
     <script>
         // Forcer le mode plein écran sur mobile/tablette
-        (function() {
+        (function () {
             // Masquer les barres de navigation Android
             function hideAndroidBars() {
                 // Masquer la barre d'adresse sur mobile
                 if (window.innerHeight !== window.screen.height) {
                     window.scrollTo(0, 1);
                 }
-                
+
                 // Forcer le plein écran si l'API est disponible
                 if (document.documentElement.requestFullscreen) {
-                    document.documentElement.requestFullscreen().catch(() => {});
+                    document.documentElement.requestFullscreen().catch(() => { });
                 } else if (document.documentElement.webkitRequestFullscreen) {
                     document.documentElement.webkitRequestFullscreen();
                 } else if (document.documentElement.mozRequestFullScreen) {
@@ -34,31 +35,31 @@
                     document.documentElement.msRequestFullscreen();
                 }
             }
-            
+
             // Essayer immédiatement
             if (document.readyState === 'loading') {
                 document.addEventListener('DOMContentLoaded', hideAndroidBars);
             } else {
                 hideAndroidBars();
             }
-            
+
             // Réessayer après un court délai (pour certains navigateurs)
             setTimeout(hideAndroidBars, 500);
-            
+
             // Réessayer après interaction utilisateur (certains navigateurs nécessitent une interaction)
             document.addEventListener('touchstart', function once() {
                 hideAndroidBars();
                 document.removeEventListener('touchstart', once);
             }, { once: true });
-            
+
             // Gérer le changement d'orientation
-            window.addEventListener('orientationchange', function() {
+            window.addEventListener('orientationchange', function () {
                 setTimeout(hideAndroidBars, 100);
             });
-            
+
             // Prévenir le zoom sur double-tap
             let lastTouchEnd = 0;
-            document.addEventListener('touchend', function(event) {
+            document.addEventListener('touchend', function (event) {
                 const now = Date.now();
                 if (now - lastTouchEnd <= 300) {
                     event.preventDefault();
@@ -70,8 +71,107 @@
 </head>
 
 <body>
+    <!-- Intro Layer -->
+    <!-- Intro Layer -->
+    <div id="intro-overlay"
+        style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 10000; background: #000; display: flex; justify-content: center; align-items: center;">
+        <div id="intro-loader">
+            <div class="scanner"></div>
+            <div class="glitch-text">LOADING</div>
+        </div>
+        <video id="intro-video"
+            style="width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity 0.5s;" playsinline
+            muted>
+            <source src="assets/intro.mp4" type="video/mp4">
+        </video>
+        <button id="skip-intro" class="neon-btn small-btn"
+            style="position: absolute; bottom: 30px; right: 30px; opacity: 0; transition: opacity 0.5s; z-index: 10002;">SKIP</button>
+    </div>
+
+    <!-- FATALITY SELECTION UI -->
+    <div id="fatality-ui"
+        style="display: none; position: fixed; inset: 0; z-index: 9000; background: rgba(0,0,0,0.85); flex-direction: column; align-items: center; justify-content: center;">
+        <h1 class="glitch-title"
+            style="font-size: 5rem; color: #ff0055; text-shadow: 0 0 20px #ff0055, 4px 0 #00f3ff; font-family: 'Orbitron', monospace; margin-bottom: 50px; text-transform: uppercase;">
+            FINISH HIM</h1>
+        <div class="weapon-container" style="display: grid; grid-template-columns: 1fr 1fr; gap: 30px;">
+            <button class="weapon-btn" data-weapon="racket"
+                style="padding: 20px 40px; background: rgba(0,0,0,0.6); border: 2px solid #00f3ff; color: #fff; cursor: pointer; transition: all 0.2s; display: flex; flex-direction: column; align-items: center;">
+                <div style="font-size: 3rem; margin-bottom: 10px;">🎾</div>
+                <div style="font-family: 'Orbitron'; font-size: 1.2rem; color: #00f3ff; text-shadow: 0 0 10px #00f3ff;">
+                    RACKET SMASH</div>
+            </button>
+            <button class="weapon-btn" data-weapon="golf"
+                style="padding: 20px 40px; background: rgba(0,0,0,0.6); border: 2px solid #ffee00; color: #fff; cursor: pointer; transition: all 0.2s; display: flex; flex-direction: column; align-items: center;">
+                <div style="font-size: 3rem; margin-bottom: 10px;">⛳</div>
+                <div style="font-family: 'Orbitron'; font-size: 1.2rem; color: #ffee00; text-shadow: 0 0 10px #ffee00;">
+                    FORE!</div>
+            </button>
+            <button class="weapon-btn" data-weapon="cannon"
+                style="padding: 20px 40px; background: rgba(0,0,0,0.6); border: 2px solid #ff0055; color: #fff; cursor: pointer; transition: all 0.2s; display: flex; flex-direction: column; align-items: center;">
+                <div style="font-size: 3rem; margin-bottom: 10px;">💣</div>
+                <div style="font-family: 'Orbitron'; font-size: 1.2rem; color: #ff0055; text-shadow: 0 0 10px #ff0055;">
+                    CANNON BLAST</div>
+            </button>
+            <button class="weapon-btn" data-weapon="pool"
+                style="padding: 20px 40px; background: rgba(0,0,0,0.6); border: 2px solid #44ff44; color: #fff; cursor: pointer; transition: all 0.2s; display: flex; flex-direction: column; align-items: center;">
+                <div style="font-size: 3rem; margin-bottom: 10px;">🎱</div>
+                <div style="font-family: 'Orbitron'; font-size: 1.2rem; color: #44ff44; text-shadow: 0 0 10px #44ff44;">
+                    CORNER POCKET</div>
+            </button>
+        </div>
+    </div>
+
+    <style>
+        #intro-loader {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+            z-index: 10001;
+        }
+
+        .scanner {
+            width: 80px;
+            height: 80px;
+            border: 4px solid rgba(0, 243, 255, 0.2);
+            border-top-color: #00f3ff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            box-shadow: 0 0 20px #00f3ff;
+        }
+
+        .glitch-text {
+            color: #fff;
+            font-family: 'Orbitron', sans-serif;
+            letter-spacing: 4px;
+            animation: blink 0.5s infinite alternate;
+        }
+
+        @keyframes spin {
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+
+        @keyframes blink {
+            0% {
+                opacity: 0.5;
+            }
+
+            100% {
+                opacity: 1;
+                text-shadow: 0 0 10px #fff;
+            }
+        }
+    </style>
+
     <!-- Lobby Screen -->
-    <div id="lobby-container">
+    <div id="lobby-container" style="display: none;">
         <div class="lobby-controls">
             <h1 class="neon-title">PINK PURPLE</h1>
 
@@ -82,13 +182,15 @@
             <div class="join-section">
                 <input type="text" id="room-code-input" placeholder="CODE" maxlength="5">
             </div>
-            <button id="join-btn" class="neon-btn" style="border-color: var(--secondary-color); margin-top: 10px;">JOIN</button>
+            <button id="join-btn" class="neon-btn"
+                style="border-color: var(--secondary-color); margin-top: 10px;">JOIN</button>
 
             <p id="lobby-status" style="color: #ff0055; min-height: 24px; font-weight: bold; margin-top: 10px;"></p>
-            
+
             <div style="display: flex; gap: 10px; margin-top: 20px;">
                 <button id="tutorial-btn" class="neon-btn small-btn" style="width: auto; padding: 10px 20px;">?</button>
-                <button id="settings-btn" class="neon-btn small-btn" style="width: auto; padding: 10px 20px;">⚙️</button>
+                <button id="settings-btn" class="neon-btn small-btn"
+                    style="width: auto; padding: 10px 20px;">⚙️</button>
             </div>
         </div>
     </div>
@@ -97,11 +199,12 @@
     <div id="game-ui" style="display: none;">
         <div id="ui-layer">
             <!-- Top Bar: Controls Hint & Room Info -->
-            <button id="share-btn" class="neon-btn small-btn" style="position: absolute; top: 20px; right: 20px; width: auto; padding: 10px 20px; pointer-events: auto; z-index: 100;">INVITE</button>
+            <button id="share-btn" class="neon-btn small-btn"
+                style="position: absolute; top: 20px; right: 20px; width: auto; padding: 10px 20px; pointer-events: auto; z-index: 100;">INVITE</button>
 
             <div
                 style="position: absolute; top: 20px; width: 100%; display: flex; justify-content: center; pointer-events: none;">
-            <div id="controls-hint">
+                <div id="controls-hint">
                     <div class="key"><span>ARROWS / ZQSD</span> MOVE</div>
                     <div class="key"><span>SPACE</span> HIT</div>
                     <div class="key"><span>E</span> SLAM</div>
@@ -123,8 +226,8 @@
             <!-- Touch Controls (Mobile/Tablet) -->
             <div id="touch-controls">
                 <div class="left-controls">
-                <div id="joystick-zone">
-                    <div id="joystick-knob"></div>
+                    <div id="joystick-zone">
+                        <div id="joystick-knob"></div>
                     </div>
                 </div>
                 <div id="action-buttons">
@@ -146,12 +249,12 @@
                 <canvas id="tutorial-canvas" width="300" height="300"></canvas>
             </div>
             <p id="tutorial-text" class="tutorial-desc"></p>
-            
+
             <div class="modal-actions">
                 <button id="tutorial-next-btn" class="neon-btn">NEXT</button>
                 <button id="tutorial-close-btn" class="neon-btn" style="display: none;">PLAY</button>
             </div>
-            
+
             <label class="checkbox-container">
                 <input type="checkbox" id="tutorial-dont-show"> Do not show again
             </label>
@@ -177,7 +280,7 @@
             <div id="keys-list" class="keys-list">
                 <!-- Populated by JS -->
             </div>
-            
+
             <div class="modal-actions">
                 <button id="settings-reset-btn" class="neon-btn" style="border-color: #ff0055;">RESET</button>
                 <button id="settings-save-btn" class="neon-btn">SAVE & CLOSE</button>

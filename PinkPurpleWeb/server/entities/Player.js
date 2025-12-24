@@ -27,7 +27,7 @@ class Player {
         // Effet de taille
         this.sizeMultiplier = 1.0;
         this.sizeEffectTimer = 0;
-        
+
         // Direction de mouvement
         this.lastMovement = 'horizontal'; // 'horizontal' ou 'up'
         this.currentAttackDirection = 'horizontal'; // Stocke la direction de l'attaque en cours
@@ -80,21 +80,22 @@ class Player {
     }
 
     update(obstacles) {
+        let slammed = false; // Init flag
         // Update cooldowns (ALWAYS UPDATE FIRST)
         if (this.dashCooldown > 0) this.dashCooldown--;
         if (this.moveCooldown > 0) this.moveCooldown--;
         if (this.attackCooldown > 0) this.attackCooldown--;
         if (this.threadCooldown > 0) this.threadCooldown--;
         if (this.grenadeCooldown > 0) this.grenadeCooldown--;
-        
+
         // Update victory stance grace period
         if (this.victoryStanceTimer > 0) {
             this.victoryStanceTimer--;
             // Auto-exit victory stance after grace period if no input
-             if (this.victoryStanceTimer === 0) {
-                 // Optionnel: On pourrait forcer la sortie ici, mais on attend l'input joueur normalement.
-                 // Le user a dit "bloque indéfiniment", donc le timer ne descendait pas.
-             }
+            if (this.victoryStanceTimer === 0) {
+                // Optionnel: On pourrait forcer la sortie ici, mais on attend l'input joueur normalement.
+                // Le user a dit "bloque indéfiniment", donc le timer ne descendait pas.
+            }
         }
 
         // Update effet de taille
@@ -124,20 +125,20 @@ class Player {
             this.t = 0;
             return { dead: false, bounced: false };
         }
-        
+
         // Update fil/grappin
         if (this.threadActive) {
             this.threadActive.age++;
             this.threadActive.x += this.threadActive.vx;
             this.threadActive.y += this.threadActive.vy;
             // Limite de portée
-            if (this.threadActive.age > 60 || 
+            if (this.threadActive.age > 60 ||
                 this.threadActive.x < 0 || this.threadActive.x > WIDTH ||
                 this.threadActive.y < 0 || this.threadActive.y > HEIGHT) {
                 this.threadActive = null;
             }
         }
-        
+
         // Update toile d'araignée
         if (this.webActive) {
             this.webActive.age++;
@@ -147,7 +148,7 @@ class Player {
                 this.webActive = null;
             }
         }
-        
+
         // Reset combo si trop de temps passe
         if (this.attackCombo > 0 && this.lastAction !== 'HIT') {
             this.attackCombo = 0;
@@ -245,6 +246,7 @@ class Player {
                 this.isHit = false;
                 this.startX = this.x;
                 this.startY = this.y;
+                slammed = true; // Slam Impact detected
             } else {
                 let vy = Math.sin(this.angle) * this.velocity + GRAVITY * this.t;
                 let vx = Math.cos(this.angle) * this.velocity;
@@ -305,14 +307,32 @@ class Player {
             }
         }
 
-        // Sortie de l'écran : seulement si trop de dégâts ou si on sort par le haut
-        if (this.y < -100) {
-            return { dead: true, bounced: false };
+        // Sortie de l'écran (Haut)
+        if (this.y < 25) { // Ceiling
+            if (!this.isInvincible && this.damage < 50) {
+                // REBOND PLAFOND
+                this.y = 25;
+                let vy = Math.sin(this.angle) * this.velocity + GRAVITY * this.t; // Vertical speed
+                let vx = Math.cos(this.angle) * this.velocity;
+
+                // Invert Y speed
+                vy = Math.abs(vy) * 0.8; // Force bounce down
+
+                this.velocity = Math.sqrt(vx * vx + vy * vy);
+                this.angle = Math.atan2(vy, vx);
+                this.t = 0;
+                this.startX = this.x;
+                this.startY = this.y;
+            } else {
+                // Dead
+                return { dead: true, bounced: false, slammed: slammed };
+            }
         }
+
         // Sortie latérale : seulement si dégâts >= seuil
         if (this.damage >= 50) {
             if (this.x < -100 || this.x > WIDTH + 100) {
-                return { dead: true, bounced: false };
+                return { dead: true, bounced: false, slammed: slammed };
             }
         } else {
             // Sinon, on reste bloqué aux murs
@@ -320,7 +340,7 @@ class Player {
             if (this.x > WIDTH + 100) this.x = WIDTH - 25;
         }
 
-        return { dead: false, bounced: collided };
+        return { dead: false, bounced: collided, slammed: slammed };
     }
 
     applyInput(key) {
@@ -353,7 +373,7 @@ class Player {
             this.isHit = true;
             this.activeHitboxTimer = 10;
             this.attackCooldown = 30;
-            
+
             // Gestion des combos
             if (this.lastAction === 'HIT') {
                 this.attackCombo++;
@@ -361,7 +381,7 @@ class Player {
                 this.attackCombo = 1;
             }
             this.lastAction = 'HIT';
-            
+
             // Combo dash + attaque
             if (this.dashAttackCombo) {
                 this.dashAttackCombo = false;
@@ -372,11 +392,31 @@ class Player {
             let attackDir = 'horizontal';
             if (this.lastMovement === 'up') {
                 attackDir = 'up';
-            } else {
-                attackDir = this.lastFacing === 1 ? 'right' : 'left';
+            } else if (this.lastMovement === 'horizontal' && (/* How to check DOWN attack? Uses lastMovement too? */ this.angle === -Math.PI / 2)) {
+                // Wait, lastMovement is 'horizontal' even for DOWN? Let's check logic below
+                // In applyInput: DOWN sets angle=-PI/2 but lastMovement='horizontal'. That's ambiguous.
+                // I should fix applyInput DOWN to set lastMovement='down' or check angle directly.
+                // Checking angle:
             }
+
+            // Correction: let's rely on velocity/angle set by directions?
+            // Actually, let's fix applyInput DOWN to set a distinct state for attack detection.
+
+            // Better Logic:
+            if (this.inputs?.UP) attackDir = 'up'; // If holding UP
+            else if (this.inputs?.DOWN) attackDir = 'down'; // If holding DOWN
+            else attackDir = 'side';
+
+            // But inputs object is not fully reliable here if not using it exclusively.
+            // Let's use lastMovement logic if previously set correctly.
+            // Let's UPDATE the DOWN input block to set lastMovement = 'down'.
+
+            if (this.lastMovement === 'up') attackDir = 'up';
+            else if (this.lastMovement === 'down') attackDir = 'down';
+            else attackDir = this.lastFacing === 1 ? 'right' : 'left';
+
             this.currentAttackDirection = attackDir;
-            
+
             return { type: 'attack', direction: attackDir };
         }
 
@@ -395,7 +435,7 @@ class Player {
             this.t = 0;
             this.startX = this.x;
             this.startY = this.y;
-            this.velocity = 80;
+            this.velocity = 110; // Tuned for T_INC 0.18
             this.angle = Math.PI / 2;
             this.moveCooldown = 20;
             return 'slam';
@@ -406,7 +446,7 @@ class Player {
                 this.t = 0;
                 this.startX = this.x;
                 this.startY = this.y;
-                this.velocity = -120;
+                this.velocity = -130; // Tuned for T_INC 0.18
                 if (this.lastFacing === 1) this.angle = Math.PI;
                 else this.angle = 0;
                 this.dashCooldown = 60;
@@ -451,7 +491,7 @@ class Player {
         this.t = 0;
         this.startX = this.x;
         this.startY = this.y;
-        this.velocity = -50;
+        this.velocity = -75; // Tuned for T_INC 0.18
 
         if (key === 'LEFT') {
             this.angle = Math.PI / 3;
@@ -469,8 +509,8 @@ class Player {
         }
         else if (key === 'DOWN') {
             this.angle = -Math.PI / 2;
-            this.velocity = -50;
-            this.lastMovement = 'horizontal';
+            this.velocity = -70; // Tuned for T_INC 0.18
+            this.lastMovement = 'down'; // Was 'horizontal' - Now distinct for Down Attacks
         }
     }
 
